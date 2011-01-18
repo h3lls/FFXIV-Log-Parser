@@ -13,6 +13,7 @@ import time
 import json
 import urllib
 import urllib2
+import uuid
 
 charactername = ""
 doloop = 0
@@ -49,7 +50,7 @@ class MainFrame(wx.Frame):
 			config = ConfigParser.ConfigParser()
 			config.read('logparser.cfg')
 			logpath = config.get('Config', 'logpath')
-			charactername = config.get('Config', 'charactername')
+			charactername = hex(uuid.getnode()) #config.get('Config', 'charactername')
 		except:
 			logpath = ""
 			charactername = ""
