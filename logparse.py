@@ -147,7 +147,11 @@ class GUIThread(Thread):
             if len(diff) > 0:
                 self.status("Found " + str(len(l)) + " new logs.")
                 prev = l
-                files = [i[1] for i in diff]
+                if len(diff) == len(l):
+                    files = [i[1] for i in l]
+                else:
+                    files = [i[1] for i in l[len(l)-5:]]
+                print files
                 readLogFile(files, 'battle', self.charactername)
             start = datetime.datetime.now()
             self.status("Waiting for new log data...")
@@ -230,6 +234,7 @@ def printCrafting(currentcrafting):
     return
 
 def printDamage(currentmonster):
+    global uploaddata
     if len(currentmonster["damage"]) > 0:
         hitpercent = 100
         criticalavg = 0
@@ -592,6 +597,7 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None):
 
 def uploadToDB():
     global doloop
+    global uploaddata
     if not doloop:
         response = raw_input("Do you wish to display raw data? [y/N]: ")
     else:
@@ -616,6 +622,7 @@ def uploadToDB():
             print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"] 
     else:
         print "Your data will not be sent."
+    uploaddata = []
 
 def doUpload(jsondata):
 
@@ -628,7 +635,7 @@ def doUpload(jsondata):
     req = urllib2.Request(url, data, headers)
     response = urllib2.urlopen(req)
     jsonresults = response.read()
-    print jsonresults
+    #print jsonresults
     #exit()
     return json.loads(jsonresults)
 
