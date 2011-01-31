@@ -26,20 +26,20 @@ class MainFrame(wx.Frame):
         self.sb = self.CreateStatusBar() # A Statusbar in the bottom of the window
 
         # Setting up the menu.
-        filemenu= wx.Menu()
+        self.filemenu= wx.Menu()
 
         # wx.ID_ABOUT and wx.ID_EXIT are standard IDs provided by wxWidgets.
-        filemenu.Append(1, "&Start"," Start Processing Logs")
-        filemenu.Append(wx.ID_ABOUT, "&About"," Information about this program")
-        filemenu.AppendSeparator()
-        filemenu.Append(wx.ID_EXIT,"E&xit"," Terminate the program")
+        self.filemenu.Append(1, "&Start"," Start Processing Logs")
+        self.filemenu.Append(wx.ID_ABOUT, "&About"," Information about this program")
+        self.filemenu.AppendSeparator()
+        self.filemenu.Append(wx.ID_EXIT,"E&xit"," Terminate the program")
         self.Bind(wx.EVT_MENU, self.OnStartCollecting, id=1)
         self.Bind(wx.EVT_MENU, self.OnExit, id=wx.ID_EXIT)
         self.Bind(wx.EVT_MENU, self.OnAbout, id=wx.ID_ABOUT)#menuItem)
 
         # Creating the menubar.
         menuBar = wx.MenuBar()
-        menuBar.Append(filemenu,"&File") # Adding the "filemenu" to the MenuBar
+        menuBar.Append(self.filemenu,"&File") # Adding the "filemenu" to the MenuBar
         self.SetMenuBar(menuBar)  # Adding the MenuBar to the Frame content.
         
         panel = wx.Panel(self, -1)		
@@ -54,9 +54,26 @@ class MainFrame(wx.Frame):
         except:
             logpath = ""
             pass
+
         if logpath == "":
             userdir = os.path.expanduser('~')
             logpath = os.path.join(userdir, "Documents\\My Games\\FINAL FANTASY XIV\\user\\") 
+            userdirs = os.listdir(logpath)
+            newestdate = None
+            try:
+                for dir in userdirs:
+                    l = [(os.stat(i).st_mtime, i) for i in glob.glob(os.path.join(logpath, dir, 'log', '*.log'))]
+                    l.sort()
+                    if len(l) > 0:
+                        if newestdate != None:
+                            if l[0][0] > newestdate:
+                                newestdate = l[0][0];
+                                logpath = os.path.join(logpath, dir, 'log')
+                        else:
+                            newestdate = l[0][0];
+                            logpath = os.path.join(logpath, dir, 'log')
+            except:
+                logpath = os.path.join(userdir, "Documents\\My Games\\FINAL FANTASY XIV\\user\\")
         self.st = wx.StaticText(panel, -1, 'Select Log Path', (5,3))
         self.control = wx.TextCtrl(panel, -1, logpath, (5,21), (345, 22))
         self.btnDialog = wx.Button(panel, 102, "...", (350,20), (28, 24))
@@ -89,11 +106,13 @@ class MainFrame(wx.Frame):
 
     def OnAbout(self,e):
         # A message dialog box with an OK button. wx.OK is a standard ID in wxWidgets.
-        dlg = wx.MessageDialog( self, "A log parser for Final Fantasy XIV.", "About FFXIV Log Parser", wx.OK)
+        dlg = wx.MessageDialog( self, "A log parser for Final Fantasy XIV.\nRead more at http://ffxivbattle.com/", "About FFXIV Log Parser", wx.OK)
         dlg.ShowModal() # Show it
         dlg.Destroy() # finally destroy it when finished.
 
     def OnStartCollecting(self, e):
+        self.filemenu.Enable(1, False)
+        self.btnDialog.Disable()
         try:
             config = ConfigParser.ConfigParser()
             try:
@@ -290,8 +309,8 @@ def printDamage(currentmonster):
             hitpercent = (100 - hitpercent)
         print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nMisses By Others: %i\nExp: %i\nSkill Points: %i\nDate Time: %s\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["othermiss"], currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
         uploaddata.append(currentmonster)
-
-
+        if len(uploaddata) > 20:
+            uploadToDB()
 
 def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None):
     exptotal = 0
@@ -369,7 +388,7 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None):
                                 quality = []
                             synthtype = "Bold"
                         else:
-                            print logitem
+                            #print logitem
                             # TODO: need to handle all special types or they will be ingredients, setup
                             # an array with all traits and abilities and compare.
                             if logitem.find("You use a") != -1:
@@ -439,7 +458,7 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None):
                                 continue
                         defeated = True
                 elif logitem.startswith("46::"):
-                    print logitem
+                    #print logitem
                     # Crafting success
                     if logitem.find("You create") != -1:
                         if logitem.find(" of ") != -1:
@@ -617,7 +636,7 @@ def uploadToDB():
         print "Records Sent (Duplicates ignored): %s" % url["recordsimported"]
         print "Records Uploaded To Website: %s" % url["updatedrecords"]
         if int(url["updatedrecords"]) > 0:
-            print "\nYour data has been uploaded, you can view it at: \n\n%s\n" % url["url"] 
+            print "\nYour data has been uploaded, you can view it at: \n\n%s" % url["url"] 
         else:
             print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"] 
     else:
@@ -625,19 +644,20 @@ def uploadToDB():
     uploaddata = []
 
 def doUpload(jsondata):
+    try:
+        url = 'http://ffxivbattle.com/postlog.php'
+        user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
+        values = {'jsondata' : jsondata }
+        headers = { 'User-Agent' : "H3lls Log Parser v 1.7" }
 
-    url = 'http://50.16.215.246/postlog.php'
-    user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
-    values = {'jsondata' : jsondata }
-    headers = { 'User-Agent' : "H3lls Log Parser" }
+        data = "jsondata=%s" % jsondata
+        req = urllib2.Request(url, data, headers)
+        response = urllib2.urlopen(req)
+        jsonresults = response.read()
 
-    data = "jsondata=%s" % jsondata
-    req = urllib2.Request(url, data, headers)
-    response = urllib2.urlopen(req)
-    jsonresults = response.read()
-    #print jsonresults
-    #exit()
-    return json.loads(jsonresults)
+        return json.loads(jsonresults)
+    except Exception, e:
+        print "There was a problem uploading your data." + e
 
 if __name__ == '__main__':
     main()

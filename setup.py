@@ -8,6 +8,6 @@ if sys.platform == "win32":
 
 setup(
         name = "FFXIVLogParser",
-        version = "1.4",
+        version = "1.7",
         description = "FFXIV Log Parser",
         executables = [Executable("logparse.py", base = base)])
