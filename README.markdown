@@ -7,6 +7,8 @@ There is no unique ID for each monster being attacked. This proves quite trouble
 The log format does not include damage due to damage over time. Because of this you will not see the total damage being done to you or the monster if a DOT is used.
 The data gathered by the log viewer is reduced to just a small fraction of the overall log. An example output of a log entry being sent would be:
 
+### Example Data ###
+
 [{"monster": "brine bogy", 
 "charactername": "Joe User", 
 "damage": [["25", 0], ["27", 0]], 
@@ -16,6 +18,7 @@ The data gathered by the log viewer is reduced to just a small fraction of the o
 "hitdamage": [["29", 0], ["29", 0]], 
 "miss": 1, 
 "class": "hand-to-hand"}]
+
 Below we discuss what each of these are and how they are used.
 
 * monster - Name of the monster being attacked.
@@ -35,11 +38,12 @@ The damage is sent as individual values so we can calculate the average for each
 The log data that is uploaded gets added to a database of all users. This is then used to display the information listed on the Character Battle Stats page. We do not show the actual user data that is being uploaded and it is not a requirement that you upload the data under your own character name. For consistency you should always use the same character name when uploading your data so we can prune and keep out duplicates.
 
 # How the Script Works #
+
 The script parses the logs one entry at a time and determines a code. This code tells you what type of data it is reading and then it parses the log text for the details such as damage, monster names and the like. The script has two modes. The windows mode is very simple and it will silently gather data in the background every minute and determine if there is anything new to upload. If it finds new data it will upload it and start from there.
 
 You can also run it from the command line to have a more detailed view of what the log parser is doing. In this mode it will also let you see more information than the windowed version. You can parse out chat logs, battle information and filter on specific monsters. It will also ask if you want to upload the information. If you do not want to and just wish to view the data you can tell it that you do not want to upload and it will spit out the raw data to your screen.
 
-# Command Line Parameters #
+### Command Line Parameters ###
 
 Usage:
 CharacterName PathToLogFiles LogDataType RunForever[True/False] FilterByMonster[optional]
