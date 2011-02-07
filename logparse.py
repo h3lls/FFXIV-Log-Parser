@@ -14,15 +14,22 @@ import json
 import urllib
 import urllib2
 import uuid
+from subprocess import Popen
+try:
+    from agw import hyperlink
+except ImportError: # if it's not there locally, try the wxPython lib.
+    import wx.lib.agw.hyperlink as hl
 
+version = 2.1
 charactername = ""
 doloop = 0
 
+guithread = None
 
 class MainFrame(wx.Frame):
     def __init__(self, parent, title):
-        wx.Frame.__init__(self, parent, title=title, size=(400,310))
-        
+        wx.Frame.__init__(self, parent, title=title, size=(400,314))
+        self.Bind(wx.EVT_CLOSE, self.OnClose)
         self.sb = self.CreateStatusBar() # A Statusbar in the bottom of the window
 
         # Setting up the menu.
@@ -32,11 +39,13 @@ class MainFrame(wx.Frame):
         self.filemenu.Append(1, "&Start"," Start Processing Logs")
         self.filemenu.Append(wx.ID_ABOUT, "&About"," Information about this program")
         self.filemenu.AppendSeparator()
+        self.filemenu.Append(2, "&Check for New Version"," Check for an update to the program")
+        self.filemenu.AppendSeparator()
         self.filemenu.Append(wx.ID_EXIT,"E&xit"," Terminate the program")
         self.Bind(wx.EVT_MENU, self.OnStartCollecting, id=1)
+        self.Bind(wx.EVT_MENU, self.OnCheckVersion, id=2)
         self.Bind(wx.EVT_MENU, self.OnExit, id=wx.ID_EXIT)
         self.Bind(wx.EVT_MENU, self.OnAbout, id=wx.ID_ABOUT)#menuItem)
-
         # Creating the menubar.
         menuBar = wx.MenuBar()
         menuBar.Append(self.filemenu,"&File") # Adding the "filemenu" to the MenuBar
@@ -88,8 +97,12 @@ class MainFrame(wx.Frame):
         logLayout.Add( lblLogWindow, 0, wx.EXPAND )
         logLayout.Add( self.logWindow, 1, wx.EXPAND )		
         redir=RedirectText(self.logWindow)
+        self.charlink = hl.HyperLinkCtrl(panel, -1, "FFXIVBattle.com Character Page", (5,216), (22, 80))
+        self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=" + charactername)
+
         sys.stdout=redir
         self.Show(True)
+
 
     def OnIdle( self, evt ):
         if self.process is not None:
@@ -105,12 +118,20 @@ class MainFrame(wx.Frame):
         dlg.Destroy()
 
     def OnAbout(self,e):
+        global version
         # A message dialog box with an OK button. wx.OK is a standard ID in wxWidgets.
-        dlg = wx.MessageDialog( self, "A log parser for Final Fantasy XIV.\nRead more at http://ffxivbattle.com/", "About FFXIV Log Parser", wx.OK)
+        dlg = wx.MessageDialog( self, "A log parser for Final Fantasy XIV.\nRead more at http://ffxivbattle.com/\n\nVersion " + str(version), "About FFXIV Log Parser", wx.OK)
         dlg.ShowModal() # Show it
         dlg.Destroy() # finally destroy it when finished.
 
+    def OnCheckVersion(self, e):
+        if versioncheck(status=1):
+            Popen("setup.exe", shell=False) # start reloader
+            self.OnExit(None)
+            return
+
     def OnStartCollecting(self, e):
+        global guithread
         self.filemenu.Enable(1, False)
         self.btnDialog.Disable()
         try:
@@ -125,25 +146,42 @@ class MainFrame(wx.Frame):
                 config.write(configfile)
         except (Exception, e):
             print e
-        self.guithread = GUIThread(self.control.GetValue(), self.charname.GetValue(), self.OnStatus) 
-        self.guithread.start()
+        try:
+            self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=" + self.charname.GetValue())
+            guithread.updatevalues(self.control.GetValue(), self.charname.GetValue(), self.OnStatus, completecallback=self.threadcallback)
+            guithread.daemon = False
+            guithread.start()
+        except:
+            pass
+
+    def threadcallback(self):
+        if self:
+            if self.filemenu:
+                self.filemenu.Enable(1, True)
+            if self.btnDialog:
+                self.btnDialog.Enable()
+        
+    def OnClose(self, e):
+        self.Destroy();
 
     def OnExit(self,e):
-        try:
-            self.guithread.exit()
-        except (AttributeError):
-            pass
         self.Close(True)  # Close the frame.
 
     def OnStatus(self, message):
-        self.sb.PushStatusText(message, 0)
+        try:
+            self.sb.PushStatusText(message, 0)
+        except:
+            pass
 
 class RedirectText(object):
     def __init__(self,aWxTextCtrl):
         self.out=aWxTextCtrl
 
     def write(self,string):
-        self.out.WriteText(string)
+        try:
+            self.out.WriteText(string)
+        except:
+            pass
 
 class GUIThread(Thread):
     def __init__(self, logpath, charactername, status): 
@@ -151,77 +189,131 @@ class GUIThread(Thread):
         self.logpath = logpath
         self.charactername = charactername
         self.status = status
+        self.exitready = 0
         Thread.__init__(self) 
 
+    def updatevalues(self, logpath, charactername, status, completecallback=None):
+        self.stopped = 0
+        self.logpath = logpath
+        self.charactername = charactername
+        self.status = status
+        self.completecallback = completecallback
+        
     def exit(self):
         self.stopped = 1
 
+    def exitcomplete(self):
+        return self.exitready
+
+    def is_running(self):
+        if self.stopped:
+            return 0
+        else:
+            return 1
+
     def run(self):
-        self.stopped = 0
+        try:
+            self.exitready = 0
+            self.stopped = 0
+            prev = []
+            while not self.stopped:
+                l = [(os.stat(i).st_mtime, i) for i in glob.glob(os.path.join(self.logpath, '*.log'))]
+                l.sort()
+                diff = set(l).difference( set(prev) )
+                if len(diff) > 0:
+                    self.status("Found " + str(len(l)) + " new logs.")
+                    prev = l
+                    if len(diff) == len(l):
+                        files = [i[1] for i in l]
+                    else:
+                        files = [i[1] for i in l[len(l)-5:]]
+                    readLogFile(files, 'battle', self.charactername, isrunning=self.is_running)
+                start = datetime.datetime.now()
+                self.status("Waiting for new log data...")
+                while (datetime.datetime.now() - start).seconds < 60:
+                    time.sleep(1)
+                    if self.stopped:
+                        return
+        #except Exception, e:
+        #    print e
+        #    pass
+        finally:
+            self.exitready = 1
+            self.stopped = 1
+            if self.completecallback:
+                self.completecallback()
+
+def main():
+    try:    
+        global doloop, guithread
+        args = sys.argv[1:]
+
+        if len(args) < 1:
+            try:
+                guithread = GUIThread(None, None, None) 
+                doloop = 1
+                app = wx.App()
+                if versioncheck():
+                    Popen("setup.exe", shell=False) # start reloader
+                    return
+                frame = MainFrame(None, "FFXIV Log Parser")
+                app.MainLoop()
+                try:
+                    if guithread:
+                        guithread.exit()
+                except (AttributeError):
+                    pass
+                alivecount = 0
+                while 1:
+                    if guithread:
+                        if guithread.isAlive():
+                            time.sleep(1)
+                            alivecount == alivecount + 1
+                            if alivecount > 20:
+                                # Exit anyways the thread is misbehaving
+                                break
+                        else:
+                            break
+                    else:
+                        break
+                return
+            except Exception, e:
+                return
+        if args[0] == '?' or args[0] == 'h' or args[0] == '/?' or args[0] == '/h' or args[0] == '/help' or args[0] == 'help' or args[0] == '-h' or args[0] == '-help' or args[0] == '--help':
+            print "\r\nUsage: CharacterName PathToLogFiles LogDataType RunForever[True/False] FilterByMonster[optional]"
+            print "Example: python \"c:\\Users\\<youruser>\\Documents\\My Games\\Final Fantasy XIV\\user\\<yourcharid>\\log\\\" battle true\r\n"
+            print "Available LogDataTypes:\nbattle - view battle logs.\nchat - all chat logs.\nlinkshell - linkshell chat logs.\nsay - say chat logs.\nparty - Party chat logs.\n"
+            print "Examples of FilterByMonster:\n\"ice elemental\"\n\"fat dodo\"\n\"warf rat\"\n"
+            return
+        
+        # assign args to nice names
+        charactername = args[0]
+        logpath = args[1]
+        logdatatype = args[2]
+        logmonsterfilter = None
+        if args[3].lower() == "true":
+            doloop = 1
+        if len(args) > 4:
+            logmonsterfilter = args[4]
         prev = []
-        while not self.stopped:
-            l = [(os.stat(i).st_mtime, i) for i in glob.glob(os.path.join(self.logpath, '*.log'))]
+        while 1==1:
+            l = [(os.stat(i).st_mtime, i) for i in glob.glob(os.path.join(logpath, '*.log'))]
             l.sort()
             diff = set(l).difference( set(prev) )
             if len(diff) > 0:
-                self.status("Found " + str(len(l)) + " new logs.")
-                prev = l
-                if len(diff) == len(l):
-                    files = [i[1] for i in l]
-                else:
-                    files = [i[1] for i in l[len(l)-5:]]
-                print files
-                readLogFile(files, 'battle', self.charactername)
-            start = datetime.datetime.now()
-            self.status("Waiting for new log data...")
-            while (datetime.datetime.now() - start).seconds < 60:
-                time.sleep(1)
-                if self.stopped:
-                    break
-
-def main():
-    global doloop
-    args = sys.argv[1:]
-
-    if len(args) < 1:
-        doloop = 1
-        app = wx.App()
-        frame = MainFrame(None, "FFXIV Log Parser")
-        app.MainLoop()
-        return
-    if args[0] == '?' or args[0] == 'h' or args[0] == '/?' or args[0] == '/h' or args[0] == '/help' or args[0] == 'help' or args[0] == '-h' or args[0] == '-help' or args[0] == '--help':
-        print "\r\nUsage: CharacterName PathToLogFiles LogDataType RunForever[True/False] FilterByMonster[optional]"
-        print "Example: python \"c:\\Users\\<youruser>\\Documents\\My Games\\Final Fantasy XIV\\user\\<yourcharid>\\log\\\" battle true\r\n"
-        print "Available LogDataTypes:\nbattle - view battle logs.\nchat - all chat logs.\nlinkshell - linkshell chat logs.\nsay - say chat logs.\nparty - Party chat logs.\n"
-        print "Examples of FilterByMonster:\n\"ice elemental\"\n\"fat dodo\"\n\"warf rat\"\n"
-        return
-    
-    # assign args to nice names
-    charactername = args[0]
-    logpath = args[1]
-    logdatatype = args[2]
-    logmonsterfilter = None
-    if args[3].lower() == "true":
-        doloop = 1
-    if len(args) > 4:
-        logmonsterfilter = args[4]
-    prev = []
-    while 1==1:
-        l = [(os.stat(i).st_mtime, i) for i in glob.glob(os.path.join(logpath, '*.log'))]
-        l.sort()
-        diff = set(l).difference( set(prev) )
-        if len(diff) > 0:
-            prev = l			
-            files = [i[1] for i in sorted(diff)]
-            readLogFile(files, logdatatype, charactername, logmonsterfilter=logmonsterfilter)
-        if not doloop:
-            break
-        time.sleep(60)
-
+                prev = l			
+                files = [i[1] for i in sorted(diff)]
+                readLogFile(files, logdatatype, charactername, logmonsterfilter=logmonsterfilter)
+            if not doloop:
+                break
+            time.sleep(60)
+    except Exception, e:
+        print "program ex:"
+        print e
 """
 20 = "ready (inswert combat skill)..." as well as loot obtain
 42= all SP and EXP gain notices by you 
-45= defeated message
+45= monster defeated message or you defeated
 -46 = crafting success / failure
 50=all my attacks that land 
 51= all auto-attacks that mobs land on me, even crits / side attacks 
@@ -243,17 +335,23 @@ def main():
 6D = status affects being inflicted on monsters near you AND players 
 """
 
-defaultmonster = {"charactername":"", "datetime":"", "monster":"", "monstermiss":0, "othermonstermiss":0, "damage":[], "miss":0, "hitdamage":[], "otherdamage":[], "othermiss":0, "otherhitdamage":[], "skillpoints":0, "class":"", "exp":0}
-defaultcrafting = {"charactername":"", "datetime":"", "item":"", "actions":[], "ingredients":[], "success":0, "skillpoints":0, "class":"", "exp":0}
-uploaddata = []
+defaultmonster = {"datetime":"", "monster":"", "monstermiss":0, "othermonstermiss":0, "damage":[], "miss":0, "hitdamage":[], "otherdamage":[], "othermiss":0, "otherhitdamage":[], "skillpoints":0, "class":"", "exp":0}
+defaultcrafting = {"datetime":"", "item":"", "actions":[], "ingredients":[], "success":0, "skillpoints":0, "class":"", "exp":0}
+characterdata = {"charactername":"", "deaths":[]}
+monsterdata = []
+craftingdata = []
+gatheringdata = []
+#uploaddata = []
 
 def printCrafting(currentcrafting):
+    global craftingdata
     #print currentcrafting
     #raw_input("")
     return
 
 def printDamage(currentmonster):
-    global uploaddata
+    global monsterdata
+
     if len(currentmonster["damage"]) > 0:
         hitpercent = 100
         criticalavg = 0
@@ -308,11 +406,11 @@ def printDamage(currentmonster):
             hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
             hitpercent = (100 - hitpercent)
         print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nMisses By Others: %i\nExp: %i\nSkill Points: %i\nDate Time: %s\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["othermiss"], currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
-        uploaddata.append(currentmonster)
-        if len(uploaddata) > 20:
-            uploadToDB()
+        monsterdata.append(currentmonster)
+        #if len(monsterdata) > 20:
+        #    uploadToDB()
 
-def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None):
+def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None, isrunning=None):
     exptotal = 0
     damagepermob = 0
     damageavgpermob = 0
@@ -324,6 +422,7 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None):
     defeated = False
     expset = False
     spset = False
+    characterdata["charactername"] = charactername
     currentmonster = copy.deepcopy(defaultmonster)
     currentcrafting = copy.deepcopy(defaultcrafting)
     for logfilename in paths:
@@ -332,6 +431,9 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None):
         logdata = logfile.read()
         logdata = logdata.split("00")
         for logitem in logdata[1:]:
+            if isrunning:
+                if not isrunning():
+                    return
             if logdatatype == "battle":
                 #print logitem
                 #if logitem.find("Welcome") != -1:
@@ -351,7 +453,6 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None):
                             printDamage(currentmonster)
 
                         currentmonster = copy.deepcopy(defaultmonster)
-                        currentmonster["charactername"] = charactername
                         currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(logfiletime))
                         currentmonster["monster"] = logitem[logitem.find("The ") +4:logitem.find(" is")]
                         currentmonster["monster"] = currentmonster["monster"].split('\'')[0]
@@ -396,7 +497,11 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None):
                             elif logitem.find("Touch Up") != -1:
                                 continue
                             else:
-                                ingcount = int(logitem.split(" ")[2])
+                                try:
+                                    ingcount = int(logitem.split(" ")[2])
+                                except ValueError:
+                                    # this is a special so skip it for now...
+                                    continue
                             if logitem.find(" of ") != -1:
                                 ingredient = logitem[logitem.find(" of ") +4:-1]
                             else:
@@ -450,6 +555,11 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None):
                         currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(logfiletime))
                         craftingcomplete = 0
                     if logitem.find("group") != -1:
+                        continue
+                    if logitem.find("defeats you") != -1:
+                        # You were killed...
+                        characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.localtime(logfiletime)), "class":currentmonster["class"]})
+                        #0045::The fat dodo defeats you.
                         continue
                     if logitem.find("defeat") != -1:
                         monster = logitem[logitem.find("The ") +4:logitem.find(" is defeat")].split('\'')[0]
@@ -616,12 +726,16 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None):
 
 def uploadToDB():
     global doloop
-    global uploaddata
+    global monsterdata
+    global craftingdata
+    global gatheringdata
+    
     if not doloop:
         response = raw_input("Do you wish to display raw data? [y/N]: ")
     else:
         response = "no"
-    jsondata = json.dumps(uploaddata)
+    tmpdata = {"version": version, "character": characterdata, "battle": monsterdata, "crafting":craftingdata, "gathering":gatheringdata}
+    jsondata = json.dumps(tmpdata)
     if response.upper() == "Y" or response.upper() == "YES":
         print "JSON encoded for upload:"
         print jsondata
@@ -633,6 +747,7 @@ def uploadToDB():
         url = doUpload(jsondata)
         #if not doloop:
         print "\nTotal Global Battle Records: %s" % url["totalbattlerecords"]
+        print "Total New Character Deaths: %s" % url["deaths"]
         print "Records Sent (Duplicates ignored): %s" % url["recordsimported"]
         print "Records Uploaded To Website: %s" % url["updatedrecords"]
         if int(url["updatedrecords"]) > 0:
@@ -641,26 +756,85 @@ def uploadToDB():
             print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"] 
     else:
         print "Your data will not be sent."
-    uploaddata = []
+    monsterdata = []
+    craftingdata = []
+    gatheringdata = []
+    characterdata["deaths"] = []
 
 def doUpload(jsondata):
     try:
         url = 'http://ffxivbattle.com/postlog.php'
         user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
         values = {'jsondata' : jsondata }
-        headers = { 'User-Agent' : "H3lls Log Parser v 1.7" }
+        headers = { 'User-Agent' : "H3lls Log Parser v 1.9" }
 
         data = "jsondata=%s" % jsondata
         req = urllib2.Request(url, data, headers)
         response = urllib2.urlopen(req)
         jsonresults = response.read()
-
+        print jsonresults
         return json.loads(jsonresults)
     except Exception, e:
-        print "There was a problem uploading your data." + e
+        print "There was a problem uploading your data."
+        print e
+
+def doAppUpdate():
+    try:
+        response = urllib2.urlopen('http://ffxivbattle.com/setup.exe');
+        file_size = int(response.info().getheader('Content-Length').strip())
+        dialog = wx.ProgressDialog ( 'Progress', 'Downloading New Installer Version.', maximum = file_size, style = wx.PD_CAN_ABORT | wx.PD_AUTO_HIDE | wx.PD_ELAPSED_TIME | wx.PD_REMAINING_TIME )
+        chunk_size = 8192
+        bytes_so_far = 0
+        setupfile = 'setup.exe'
+        f = open(setupfile, 'wb')
+        while 1:
+            chunk = response.read(chunk_size)
+            f.write(chunk)
+            bytes_so_far += len(chunk)
+            (keep_going, skip) = dialog.Update ( bytes_so_far )
+            if not keep_going:
+                dialog.Destroy()
+                f.close()
+                os.remove(setupfile)
+                return 0
+            if not chunk:
+                break
+        f.close()
+        return 1
+    except Exception, e:
+        return 0
+
+def versioncheck(status=0):
+    response = None
+    try:
+        response = urllib2.urlopen('http://ffxivbattle.com/logparserversion.php');
+    except:
+        # There was a problem reading the version page skip it.
+        print "Unable to read the remote version number."
+        return 0
+    try:
+        #print response.read()
+        remoteversion = float(response.read())
+        if remoteversion > version:
+            verdialog = wx.MessageDialog(None, 'A new version is available would you like to download and install it?', 'New Version', 
+            wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
+            if verdialog.ShowModal() == wx.ID_YES:
+                return doAppUpdate()
+        elif status:
+            okdlg = wx.MessageDialog(None, 'You are currently running the latest version.', 'New Version', wx.OK)
+            okdlg.ShowModal()
+    except ValueError, e:
+        # The result was garbage so skip it.
+        print e
+        print "Did not understand the remote version number."
+        return 0
+    return 0
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception, e:
+        print e
 
 
 
