@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
+import hashlib
 import ConfigParser
 import wx
 from threading import Thread 
@@ -20,14 +21,33 @@ try:
 except ImportError: # if it's not there locally, try the wxPython lib.
     import wx.lib.agw.hyperlink as hl
 
+configfile = 'logparser.cfg'
 version = 2.1
 charactername = ""
 doloop = 0
 
 guithread = None
 
+class PasswordDialog(wx.Dialog):
+    def __init__(self, parent, id, title, defaultPassword):
+        wx.Dialog.__init__(self, parent, id, title, size=(280, 130))
+
+        wx.StaticText(self, -1, 'Enter Character Password (NOT your ffxiv password)', (5,3), (250, 30))        
+        self.password = wx.TextCtrl(self, -1, defaultPassword, (5,35), (260, 22), style=wx.TE_PASSWORD)
+        self.checkbox = wx.CheckBox(self, -1, "Save Password", (5,70), (110, 22))
+        
+        wx.Button(self,  wx.ID_OK, 'Ok', (115, 65), (70, 30))
+        wx.Button(self,  wx.ID_CANCEL, 'Cancel', (195, 65), (70, 30))
+
+    def GetChecked(self):
+        return self.checkbox.GetValue()
+
+    def GetValue(self):
+        return self.password.GetValue()
+
 class MainFrame(wx.Frame):
     def __init__(self, parent, title):
+        global configfile
         wx.Frame.__init__(self, parent, title=title, size=(400,314))
         self.Bind(wx.EVT_CLOSE, self.OnClose)
         self.sb = self.CreateStatusBar() # A Statusbar in the bottom of the window
@@ -57,7 +77,7 @@ class MainFrame(wx.Frame):
         # read defaults
         try:
             config = ConfigParser.ConfigParser()
-            config.read('logparser.cfg')
+            config.read(configfile)
             logpath = config.get('Config', 'logpath')
             charactername = config.get('Config', 'charactername')
         except:
@@ -104,6 +124,25 @@ class MainFrame(wx.Frame):
         self.Show(True)
 
 
+    def CheckPassword(self, config, salt):
+        pass_stored = ""
+        try:
+            pass_stored = config.get('Config', 'password')
+        except ConfigParser.NoOptionError:
+            pass
+        print "starting dialog"
+        passwordentry = PasswordDialog(self, -1, "Enter password", pass_stored)        
+        if passwordentry.ShowModal() == wx.ID_OK:
+            password = passwordentry.GetValue()
+            print password
+            if (password != ""):
+                hash = hashlib.md5( salt + password ).hexdigest()
+                print hash
+        else:
+            return ""
+        #dostuff
+        passwordentry.Destroy()
+        
     def OnIdle( self, evt ):
         if self.process is not None:
             stream = self.process.GetInputStream()
@@ -131,21 +170,32 @@ class MainFrame(wx.Frame):
             return
 
     def OnStartCollecting(self, e):
-        global guithread
+        global guithread, configfile
         self.filemenu.Enable(1, False)
         self.btnDialog.Disable()
+        #try:
+        config = ConfigParser.ConfigParser()
         try:
-            config = ConfigParser.ConfigParser()
-            try:
-                config.add_section('Config')
-            except ConfigParser.DuplicateSectionError:
-                pass
-            config.set('Config', 'logpath', self.control.GetValue())
-            config.set('Config', 'charactername', self.charname.GetValue())
-            with open('logparser.cfg', 'wb') as configfile:
-                config.write(configfile)
-        except (Exception, e):
-            print e
+            config.add_section('Config')
+        except ConfigParser.DuplicateSectionError:
+            pass
+        # extract salt from the dir
+        dirparts = self.control.GetValue().split("\\")
+        # set the salt to the users directory name for the character.  Not 100% but good enough to salt with.
+        salt = ""
+        if dirparts[len(dirparts)-1] == "":
+            salt = dirparts[len(dirparts) - 3]
+        else:
+            salt = dirparts[len(dirparts) - 2]
+        print salt
+        config.set('Config', 'logpath', self.control.GetValue())
+        config.set('Config', 'charactername', self.charname.GetValue())
+        with open(configfile, 'wb') as configfile:
+            config.write(configfile)
+        self.CheckPassword(config, salt)
+        return
+        #except (Exception, e):
+        #    print e
         try:
             self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=" + self.charname.GetValue())
             guithread.updatevalues(self.control.GetValue(), self.charname.GetValue(), self.OnStatus, completecallback=self.threadcallback)
