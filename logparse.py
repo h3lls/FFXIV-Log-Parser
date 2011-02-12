@@ -22,7 +22,7 @@ except ImportError: # if it's not there locally, try the wxPython lib.
     import wx.lib.agw.hyperlink as hl
 
 configfile = 'logparser.cfg'
-version = 2.1
+version = 2.2
 charactername = ""
 doloop = 0
 
@@ -30,14 +30,20 @@ guithread = None
 
 class PasswordDialog(wx.Dialog):
     def __init__(self, parent, id, title, defaultPassword):
-        wx.Dialog.__init__(self, parent, id, title, size=(280, 130))
+        wx.Dialog.__init__(self, parent, id, title, size=(285, 160))
 
-        wx.StaticText(self, -1, 'Enter Character Password (NOT your ffxiv password)', (5,3), (250, 30))        
-        self.password = wx.TextCtrl(self, -1, defaultPassword, (5,35), (260, 22), style=wx.TE_PASSWORD)
-        self.checkbox = wx.CheckBox(self, -1, "Save Password", (5,70), (110, 22))
+        wx.StaticText(self, -1, 'Enter Character Password (NOT your ffxiv password)\r\n* This is so only you can submit records for your character. If you don\'t have a password type in a new one to set it.', (5,3), (280, 60))
+        self.password = wx.TextCtrl(self, -1, defaultPassword, (5,65), (260, 22), style=wx.TE_PASSWORD)
+        self.checkbox = wx.CheckBox(self, -1, "Save Password", (5,95), (110, 22))
         
-        wx.Button(self,  wx.ID_OK, 'Ok', (115, 65), (70, 30))
-        wx.Button(self,  wx.ID_CANCEL, 'Cancel', (195, 65), (70, 30))
+        wx.Button(self,  wx.ID_OK, 'Ok', (115, 95), (70, 30))
+        wx.Button(self,  wx.ID_CANCEL, 'Cancel', (195, 95), (70, 30))
+
+    def SetChecked(self, value):
+        self.checkbox.SetValue(value)
+
+    def SetValue(self, value):
+        self.password.SetValue(value)
 
     def GetChecked(self):
         return self.checkbox.GetValue()
@@ -123,25 +129,48 @@ class MainFrame(wx.Frame):
         sys.stdout=redir
         self.Show(True)
 
-
-    def CheckPassword(self, config, salt):
+    def CheckPassword(self, charactername, salt, hashed_password):
+        # call out to verify the password
+        response = None
+        try:
+            response = urllib2.urlopen('http://ffxivbattle.com/passwordcheck.php?charactername=%s&salt=%s&password=%s' % (charactername, salt, hashed_password))
+            return json.loads(response.read())["result"] == True
+        except Exception, e:
+            # The result was garbage so skip it.
+            print e
+            print "Did not understand the response from the server for the password check."
+            return False
+        
+    def GetPassword(self, config, salt):
         pass_stored = ""
         try:
-            pass_stored = config.get('Config', 'password')
-        except ConfigParser.NoOptionError:
-            pass
-        print "starting dialog"
-        passwordentry = PasswordDialog(self, -1, "Enter password", pass_stored)        
-        if passwordentry.ShowModal() == wx.ID_OK:
-            password = passwordentry.GetValue()
-            print password
-            if (password != ""):
-                hash = hashlib.md5( salt + password ).hexdigest()
-                print hash
-        else:
-            return ""
-        #dostuff
-        passwordentry.Destroy()
+            passwordentry = PasswordDialog(self, -1, "Enter password", pass_stored)        
+            try:
+                pass_stored = config.get('Config', 'password')
+                passwordentry.SetChecked(True)
+                passwordentry.SetValue(pass_stored)
+            except ConfigParser.NoOptionError:
+                pass
+            if passwordentry.ShowModal() == wx.ID_OK:
+                if pass_stored != "":
+                    if pass_stored != passwordentry.GetValue():
+                        password = passwordentry.GetValue()
+                        if password != "":
+                            hash = hashlib.md5( salt + password ).hexdigest()
+                            return hash, passwordentry.GetChecked()                        
+                    else:
+                        return pass_stored, passwordentry.GetChecked()
+                else:
+                    password = passwordentry.GetValue()
+                    if password != "":
+                        hash = hashlib.md5( salt + password ).hexdigest()
+                        return hash, passwordentry.GetChecked()                        
+                    else:
+                        return "", False
+            else:
+                return "", passwordentry.GetChecked()
+        finally:
+            passwordentry.Destroy()
         
     def OnIdle( self, evt ):
         if self.process is not None:
@@ -179,6 +208,7 @@ class MainFrame(wx.Frame):
             config.add_section('Config')
         except ConfigParser.DuplicateSectionError:
             pass
+        config.read(configfile)
         # extract salt from the dir
         dirparts = self.control.GetValue().split("\\")
         # set the salt to the users directory name for the character.  Not 100% but good enough to salt with.
@@ -187,18 +217,32 @@ class MainFrame(wx.Frame):
             salt = dirparts[len(dirparts) - 3]
         else:
             salt = dirparts[len(dirparts) - 2]
-        print salt
+        password, savepass = self.GetPassword(config, salt)
+        if self.CheckPassword(self.charname.GetValue(), salt, password):
+            if savepass:
+                config.set('Config', 'password', password)
+            else:
+                try:
+                    config.remove_option('Config', 'password')
+                except ConfigParser.NoSectionError:
+                    pass
+        else:
+            dlg = wx.MessageDialog( self, "The password provided does not match.", "Invalid Password", wx.OK)
+            dlg.ShowModal() # Show it
+            dlg.Destroy() # finally destroy it when finished.
+            self.filemenu.Enable(1, True)
+            self.btnDialog.Enable()
+            return
+                
         config.set('Config', 'logpath', self.control.GetValue())
         config.set('Config', 'charactername', self.charname.GetValue())
         with open(configfile, 'wb') as configfile:
             config.write(configfile)
-        self.CheckPassword(config, salt)
-        return
         #except (Exception, e):
         #    print e
         try:
             self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=" + self.charname.GetValue())
-            guithread.updatevalues(self.control.GetValue(), self.charname.GetValue(), self.OnStatus, completecallback=self.threadcallback)
+            guithread.updatevalues(self.control.GetValue(), self.charname.GetValue(), self.OnStatus, completecallback=self.threadcallback, password=password)
             guithread.daemon = False
             guithread.start()
         except:
@@ -242,12 +286,13 @@ class GUIThread(Thread):
         self.exitready = 0
         Thread.__init__(self) 
 
-    def updatevalues(self, logpath, charactername, status, completecallback=None):
+    def updatevalues(self, logpath, charactername, status, completecallback=None, password=""):
         self.stopped = 0
         self.logpath = logpath
         self.charactername = charactername
         self.status = status
         self.completecallback = completecallback
+        self.password = password
         
     def exit(self):
         self.stopped = 1
@@ -277,16 +322,13 @@ class GUIThread(Thread):
                         files = [i[1] for i in l]
                     else:
                         files = [i[1] for i in l[len(l)-5:]]
-                    readLogFile(files, 'battle', self.charactername, isrunning=self.is_running)
+                    readLogFile(files, 'battle', self.charactername, isrunning=self.is_running, password=self.password)
                 start = datetime.datetime.now()
                 self.status("Waiting for new log data...")
                 while (datetime.datetime.now() - start).seconds < 60:
                     time.sleep(1)
                     if self.stopped:
                         return
-        #except Exception, e:
-        #    print e
-        #    pass
         finally:
             self.exitready = 1
             self.stopped = 1
@@ -294,7 +336,7 @@ class GUIThread(Thread):
                 self.completecallback()
 
 def main():
-    try:    
+    #try:    
         global doloop, guithread
         args = sys.argv[1:]
 
@@ -329,7 +371,7 @@ def main():
                 return
             except Exception, e:
                 return
-        if args[0] == '?' or args[0] == 'h' or args[0] == '/?' or args[0] == '/h' or args[0] == '/help' or args[0] == 'help' or args[0] == '-h' or args[0] == '-help' or args[0] == '--help':
+        if args[0] == '?' or args[0] == 'h' or args[0] == '/?' or args[0] == '/h' or args[0] == '/help' or args[0] == 'help' or args[0] == '-h' or args[0] == '-help' or args[0] == '--help' or len(args) < 4:
             print "\r\nUsage: CharacterName PathToLogFiles LogDataType RunForever[True/False] FilterByMonster[optional]"
             print "Example: python \"c:\\Users\\<youruser>\\Documents\\My Games\\Final Fantasy XIV\\user\\<yourcharid>\\log\\\" battle true\r\n"
             print "Available LogDataTypes:\nbattle - view battle logs.\nchat - all chat logs.\nlinkshell - linkshell chat logs.\nsay - say chat logs.\nparty - Party chat logs.\n"
@@ -357,9 +399,9 @@ def main():
             if not doloop:
                 break
             time.sleep(60)
-    except Exception, e:
-        print "program ex:"
-        print e
+    #except ConfigParser.NoSectionError, e:
+    #    print "Program Exception:"
+    #    print e
 """
 20 = "ready (inswert combat skill)..." as well as loot obtain
 42= all SP and EXP gain notices by you 
@@ -385,7 +427,7 @@ def main():
 6D = status affects being inflicted on monsters near you AND players 
 """
 
-defaultmonster = {"datetime":"", "monster":"", "monstermiss":0, "othermonstermiss":0, "damage":[], "miss":0, "hitdamage":[], "otherdamage":[], "othermiss":0, "otherhitdamage":[], "skillpoints":0, "class":"", "exp":0}
+defaultmonster = {"datetime":"", "monster":"", "monstermiss":0, "othermonstermiss":0, "damage":[], "miss":0, "hitdamage":[], "otherdamage":[], "othermiss":[], "otherhitdamage":[], "skillpoints":0, "class":"", "exp":0}
 defaultcrafting = {"datetime":"", "item":"", "actions":[], "ingredients":[], "success":0, "skillpoints":0, "class":"", "exp":0}
 characterdata = {"charactername":"", "deaths":[]}
 monsterdata = []
@@ -455,12 +497,12 @@ def printDamage(currentmonster):
         if currentmonster["miss"] > 0:
             hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
             hitpercent = (100 - hitpercent)
-        print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nMisses By Others: %i\nExp: %i\nSkill Points: %i\nDate Time: %s\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["othermiss"], currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
+        print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nExp: %i\nSkill Points: %i\nDate Time: %s\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
         monsterdata.append(currentmonster)
         #if len(monsterdata) > 20:
         #    uploadToDB()
 
-def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None, isrunning=None):
+def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None, isrunning=None, password=""):
     exptotal = 0
     damagepermob = 0
     damageavgpermob = 0
@@ -674,10 +716,15 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None, isru
                             critical = 0
                         #print logitem
                         #raw_input("damage");
+                        attackchar = ""
+                        if critical:
+                            attackchar = logitem[10: logitem.find("'s ")]
+                        else:
+                            attackchar = logitem[: logitem.find("'s ")]
                         attacktype = logitem[logitem.find("'s ") +3:logitem.find(" hits")]
                         if logitem.find(" points") != -1:
                             damage = logitem[logitem.find("for ") +4:logitem.find(" points")]
-                            currentmonster["otherdamage"].append([damage, critical, attacktype])
+                            currentmonster["otherdamage"].append([damage, critical, attacktype, attackchar])
                 elif logitem.startswith("53::"):
                     if logitem.find("hits ") != -1:
                         logitem = logitem.strip("53::")
@@ -692,17 +739,36 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None, isru
                             else:
                                 critical = 0
                             if logitem.find(" points") != -1:
+                                if logitem.find("from the") != -1:
+                                    hitchar = logitem[logitem.find("hits ") + 5:logitem.find(" from")]
+                                else:
+                                    hitchar = logitem[logitem.find("hits ") + 5:logitem.find(" for")]
                                 hitdamage = logitem[logitem.find("for ") +4:logitem.find(" points")]
-                                currentmonster["otherhitdamage"].append([hitdamage, critical, attacktype])
+                                currentmonster["otherhitdamage"].append([hitdamage, critical, attacktype, hitchar])
                         
                 elif logitem.startswith("56::"):
                     monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
                     if monster == currentmonster["monster"]:
                         currentmonster["miss"] += 1
                 elif logitem.startswith("58::"):
-                    monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
-                    if monster == currentmonster["monster"]:
-                        currentmonster["othermiss"] += 1
+                    logitem = logitem.strip("58::")
+                    if logitem.find("KO'd target") != -1 or logitem.find("too far away") != -1 or logitem.find("guard fails.") != -1 or logitem.find("fails to take effect.") != -1:
+                        continue
+                    if logitem.find("evades") != -1:
+                        monster = logitem[logitem.find("The ") + 4:logitem.find(" evades")]
+                        if monster == currentmonster["monster"]:
+                            misschar = logitem[logitem.find("evades") + 7:logitem.find("'s ")]
+                            attacktype = logitem[logitem.find("'s ") + 3:logitem.find(".")]
+                            currentmonster["othermiss"].append([misschar, attacktype])
+                    else:
+                        if logitem.find("from the") != -1:
+                            monster = logitem[logitem.find("the ") +4:logitem.find(" from the")].split('\'')[0]
+                        else:
+                            monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
+                        if monster == currentmonster["monster"]:
+                            misschar = logitem[: logitem.find("'s ")]
+                            attacktype = logitem[logitem.find("'s ") + 3:logitem.find(" misses")]
+                            currentmonster["othermiss"].append([misschar, attacktype])
                 #elif logitem.startswith("59::"):
                 #	monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
                 #	if monster == currentmonster["monster"]:
@@ -772,9 +838,9 @@ def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None, isru
                     print "Message: " + ":".join(logitemparts[2:])
 
         logfile.close()
-    uploadToDB()
+    uploadToDB(password)
 
-def uploadToDB():
+def uploadToDB(password=""):
     global doloop
     global monsterdata
     global craftingdata
@@ -784,7 +850,7 @@ def uploadToDB():
         response = raw_input("Do you wish to display raw data? [y/N]: ")
     else:
         response = "no"
-    tmpdata = {"version": version, "character": characterdata, "battle": monsterdata, "crafting":craftingdata, "gathering":gatheringdata}
+    tmpdata = {"version": version, "password": password, "character": characterdata, "battle": monsterdata, "crafting":craftingdata, "gathering":gatheringdata}
     jsondata = json.dumps(tmpdata)
     if response.upper() == "Y" or response.upper() == "YES":
         print "JSON encoded for upload:"
@@ -819,10 +885,11 @@ def doUpload(jsondata):
         headers = { 'User-Agent' : "H3lls Log Parser v 1.9" }
 
         data = "jsondata=%s" % jsondata
+        #print data
         req = urllib2.Request(url, data, headers)
         response = urllib2.urlopen(req)
         jsonresults = response.read()
-        print jsonresults
+        #print jsonresults
         return json.loads(jsonresults)
     except Exception, e:
         print "There was a problem uploading your data."
