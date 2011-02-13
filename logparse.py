@@ -22,7 +22,7 @@ except ImportError: # if it's not there locally, try the wxPython lib.
     import wx.lib.agw.hyperlink as hl
 
 configfile = 'logparser.cfg'
-version = 2.2
+version = 2.3
 charactername = ""
 doloop = 0
 
@@ -133,7 +133,8 @@ class MainFrame(wx.Frame):
         # call out to verify the password
         response = None
         try:
-            response = urllib2.urlopen('http://ffxivbattle.com/passwordcheck.php?charactername=%s&salt=%s&password=%s' % (charactername, salt, hashed_password))
+            encodedname = urllib.quote(charactername)
+            response = urllib2.urlopen('http://ffxivbattle.com/passwordcheck.php?charactername=%s&salt=%s&password=%s' % (encodedname, salt, hashed_password))
             return json.loads(response.read())["result"] == True
         except Exception, e:
             # The result was garbage so skip it.
