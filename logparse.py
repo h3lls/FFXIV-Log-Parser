@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 # encoding: utf-8
+# -*- coding: utf-8 -*-
+
+import traceback
 
 import hashlib
 import ConfigParser
@@ -22,7 +25,7 @@ except ImportError: # if it's not there locally, try the wxPython lib.
     import wx.lib.agw.hyperlink as hl
 
 configfile = 'logparser.cfg'
-version = 2.3
+version = 3.0
 charactername = ""
 doloop = 0
 
@@ -117,17 +120,35 @@ class MainFrame(wx.Frame):
         self.charname = wx.TextCtrl(panel, -1, charactername, (5,70), (370, 22))
         self.btnDialog = wx.Button(panel, 103, "Start", (150,100))
         self.Bind(wx.EVT_BUTTON, self.OnStartCollecting, id=103)
+
+        self.Bind(wx.EVT_SIZE, self.OnSize)
+        
         lblLogWindow = wx.StaticText( panel, -1, "Activity Log", (5,120))
         self.logWindow = wx.TextCtrl(panel, -1, "", (5,136), (370, 80), style=wx.TE_MULTILINE)
-        logLayout = wx.BoxSizer( wx.VERTICAL )
-        logLayout.Add( lblLogWindow, 0, wx.EXPAND )
-        logLayout.Add( self.logWindow, 1, wx.EXPAND )		
+        self.logLayout = wx.BoxSizer( wx.HORIZONTAL )
+        self.logLayout.Add( lblLogWindow, 0, wx.EXPAND )
+        self.logLayout.Add( self.logWindow, 1, wx.EXPAND | wx.BOTTOM | wx.RIGHT )
+
         redir=RedirectText(self.logWindow)
         self.charlink = hl.HyperLinkCtrl(panel, -1, "FFXIVBattle.com Character Page", (5,216), (22, 80))
         self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=" + charactername)
 
         sys.stdout=redir
         self.Show(True)
+
+    def OnSize(self, event):
+        event.Skip()
+        
+        #print "test"
+        #self.SetTitle(str(event.GetSize()))
+        size = event.GetSize()
+        #print size
+        self.logWindow.SetSize((size[0] - 30, size[1] - 240))
+        self.charlink.SetPosition((5, size[1] - 100))
+        '''
+        = size[0] - 20
+        self.logWindow.height = size[1] - 220
+        '''
 
     def CheckPassword(self, charactername, salt, hashed_password):
         # call out to verify the password
@@ -322,8 +343,8 @@ class GUIThread(Thread):
                     if len(diff) == len(l):
                         files = [i[1] for i in l]
                     else:
-                        files = [i[1] for i in l[len(l)-5:]]
-                    readLogFile(files, 'battle', self.charactername, isrunning=self.is_running, password=self.password)
+                        files = [i[1] for i in l[len(l)-3:]]
+                    readLogFile(files, self.charactername, isrunning=self.is_running, password=self.password)
                 start = datetime.datetime.now()
                 self.status("Waiting for new log data...")
                 while (datetime.datetime.now() - start).seconds < 60:
@@ -373,16 +394,15 @@ def main():
             except Exception, e:
                 return
         if args[0] == '?' or args[0] == 'h' or args[0] == '/?' or args[0] == '/h' or args[0] == '/help' or args[0] == 'help' or args[0] == '-h' or args[0] == '-help' or args[0] == '--help' or len(args) < 4:
-            print "\r\nUsage: CharacterName PathToLogFiles LogDataType RunForever[True/False] FilterByMonster[optional]"
-            print "Example: python \"c:\\Users\\<youruser>\\Documents\\My Games\\Final Fantasy XIV\\user\\<yourcharid>\\log\\\" battle true\r\n"
-            print "Available LogDataTypes:\nbattle - view battle logs.\nchat - all chat logs.\nlinkshell - linkshell chat logs.\nsay - say chat logs.\nparty - Party chat logs.\n"
+            print "\r\nUsage: CharacterName password PathToLogFiles RunForever[True/False] FilterByMonster[optional]"
+            print "Example: python logparse.py mychar mypass \"c:\\Users\\<youruser>\\Documents\\My Games\\Final Fantasy XIV\\user\\<yourcharid>\\log\\\" true\r\n"
             print "Examples of FilterByMonster:\n\"ice elemental\"\n\"fat dodo\"\n\"warf rat\"\n"
             return
         
         # assign args to nice names
         charactername = args[0]
-        logpath = args[1]
-        logdatatype = args[2]
+        password = args[1]
+        logpath = args[2]
         logmonsterfilter = None
         if args[3].lower() == "true":
             doloop = 1
@@ -396,7 +416,11 @@ def main():
             if len(diff) > 0:
                 prev = l			
                 files = [i[1] for i in sorted(diff)]
-                readLogFile(files, logdatatype, charactername, logmonsterfilter=logmonsterfilter)
+                try:
+                    readLogFile(files, charactername, password=password, logmonsterfilter=logmonsterfilter)
+                except:
+                    traceback.print_exc()
+                    
             if not doloop:
                 break
             time.sleep(60)
@@ -428,6 +452,21 @@ def main():
 6D = status affects being inflicted on monsters near you AND players 
 """
 
+def HexToByte( hexStr ):
+    bytes = []
+  
+    hexStr = ''.join( hexStr.split(" ") )
+  
+    for i in range(0, len(hexStr), 2):
+        bytes.append( chr( int (hexStr[i:i+2], 16 ) ) )
+  
+    return unicode(''.join( bytes), 'utf-8', errors='ignore')
+
+  
+def ByteToHex( byteStr ):
+    return ''.join( [ "%02X " % ord( x ) for x in byteStr ] ).strip()
+
+'''
 defaultmonster = {"datetime":"", "monster":"", "monstermiss":0, "othermonstermiss":0, "damage":[], "miss":0, "hitdamage":[], "otherdamage":[], "othermiss":[], "otherhitdamage":[], "skillpoints":0, "class":"", "exp":0}
 defaultcrafting = {"datetime":"", "item":"", "actions":[], "ingredients":[], "success":0, "skillpoints":0, "class":"", "exp":0}
 characterdata = {"charactername":"", "deaths":[]}
@@ -435,6 +474,2161 @@ monsterdata = []
 craftingdata = []
 gatheringdata = []
 #uploaddata = []
+'''
+
+debuglevel = 2
+class ffxiv_parser:
+    def __init__(self, language): 
+        self.language = language
+        self.defaultmonster = {"datetime":"", "monster":"", "monstermiss":0, "othermonstermiss":0, "damage":[], "miss":0, "hitdamage":[], "otherdamage":[], "othermiss":[], "otherhitdamage":[], "skillpoints":0, "class":"", "exp":0}
+        self.defaultcrafting = {"datetime":"", "item":"", "actions":[], "ingredients":[], "success":0, "skillpoints":0, "class":"", "exp":0}
+        self.characterdata = {"charactername":"", "deaths":[]}
+        self.monsterdata = []
+        self.craftingdata = []
+        self.gatheringdata = []
+        self.currentmonster = copy.deepcopy(self.defaultmonster)
+        self.currentcrafting = copy.deepcopy(self.defaultcrafting)
+        self.exptotal = 0
+        self.damagepermob = 0
+        self.damageavgpermob = 0
+        self.craftingcomplete = 0
+        self.synthtype = ""
+        self.progress = []
+        self.quality = []
+        self.durability = []
+        self.defeated = False
+        self.expset = False
+        self.spset = False
+
+        self.function_map = {
+            '01': self.parse_chatmessage, # say
+            '02': self.parse_chatmessage, # shout
+            '03': self.parse_chatmessage, # sending tell
+            '04': self.parse_chatmessage, # party
+            '05': self.parse_chatmessage, # linkshell
+            '06': self.parse_chatmessage, # linkshell
+            '07': self.parse_chatmessage, # linkshell
+            '10': self.parse_chatmessage, # say messages by others?
+            '0D': self.parse_chatmessage, # get tell
+            '0F': self.parse_chatmessage, # linkshell
+            '0E': self.parse_chatmessage, # linkshell
+            '0F': self.parse_chatmessage, # linkshell
+            '19': self.parse_chatmessage, # other emote
+            '1B': self.parse_chatmessage, # emote
+            '1D': self.parse_servermessage,
+            '20': self.parse_genericmessage, 
+            '21': self.parse_invalidcommand,
+            '23': self.parse_leve,
+            '25': self.parse_npcchat, # battlewarden msg
+            '26': self.parse_npcchat, # say text
+            '27': self.parse_npcchat, # npc linkshell 
+            '28': self.parse_invoke, #invoke diety
+            '42': self.parse_spexpgain,
+            '43': self.parse_spexpgain,
+            '44': self.parse_defeated,
+            '45': self.parse_defeated,
+            '46': self.parse_craftingsuccess,
+            '47': self.parse_craftingsuccess,
+            '48': self.parse_gathering,
+            '49': self.parse_othergathering,
+            '50': self.parse_damagedealt,
+            '51': self.parse_hitdamage,
+            '52': self.parse_otherdamage,
+            '53': self.parse_otherhitdamage,
+            '54': self.parse_readyability,
+            '55': self.parse_otherdamage,
+            '56': self.parse_miss,
+            '57': self.parse_monstermiss,
+            '58': self.parse_othermiss,
+            '59': self.parse_othermiss,
+            '5B': self.parse_othermiss,
+            '5C': self.parse_absorb, #self casting?
+            '5D': self.parse_recover, # party casting?
+            '5E': self.parse_otherrecover, # other casting?
+            '60': self.parse_monstereffect, # monster starts casting
+            '61': self.parse_otherabilities,
+            '62': self.parse_effect,
+            '63': self.parse_othereffect,
+            '64': self.parse_partyabilities,
+            '65': self.parse_othereffect,
+            '66': self.parse_monstereffect,
+            '67': self.parse_othereffect,
+            '68': self.parse_inflicts,
+            '69': self.parse_inflicts,
+            '6B': self.parse_inflicts,
+            '6A': self.parse_othereffect,
+            '6C': self.parse_effect,
+            '6D': self.parse_monstereffect # wears off
+            }
+
+    def getlanguage(self):
+        return self.language
+
+    def setLogFileTime(self, logfiletime):
+        self.logfiletime = logfiletime
+
+    def getlogparts(self, logitem):
+        return logitem.split('::', 1)
+
+    def getlogpartsalt(self, logitem):
+        if (logitem.find(':') != -1):
+            code = logitem[:logitem.find(':')]            
+            logvalue = logitem[logitem.find(':') + 1:]
+        else:
+            raise ValueError
+        return code, logvalue
+    
+    def contains(self, findterm, text):
+        if text.find(findterm) != -1:
+            return False
+        else:
+            return True
+            
+    def between(self, text, starttext, endtext):
+        return text[text.find(starttext) +len(starttext):text.find(endtext)]
+    
+    def echo(self, text, messagetype=0):
+        global debuglevel
+        if messagetype < debuglevel:
+            try:
+                print text#.encode('utf-8')
+            except:
+                pass
+
+    def parse_line(self, logitem):
+        try:
+            code, logvalue = self.getlogparts(logitem)
+        except ValueError:            
+            try:
+                code, logvalue = self.getlogpartsalt(logitem)
+            except ValueError:
+                self.echo("Could not find code: " + logitem, 1)
+                return
+        
+        try:
+            self.function_map[code](code, logvalue)
+        except KeyError:
+            self.echo("Could not parse code: " + code + " value: " + logvalue, 1)
+
+class english_parser(ffxiv_parser):
+    
+    def __init__(self): 
+        ffxiv_parser.__init__(self, "en")
+        self.craftingcomplete = 0
+        self.autotranslateheader = HexToByte('02 2E')
+        #TODO: Move this to a bin file later to avoid the hextobyte and crap in the source.
+        self.autotranslate = {        
+            HexToByte('02 2E 03 01 66 03'):"(Please use the auto-translate function.)",
+            HexToByte('02 2E 03 01 67 03'):"(Japanese)",
+            HexToByte('02 2E 03 01 68 03'):"(English)",
+            HexToByte('02 2E 03 01 69 03'):"(French)",
+            HexToByte('02 2E 03 01 6A 03'):"(German)",
+            HexToByte('02 2E 03 01 6B 03'):"(Can you speak Japanese?)",
+            HexToByte('02 2E 03 01 6C 03'):"(Can you speak English?)",
+            HexToByte('02 2E 03 01 6D 03'):"(Can you speak French?)",
+            HexToByte('02 2E 03 01 6E 03'):"(Can you speak German?)",
+            HexToByte('02 2E 03 01 6F 03'):"(I don't speak any English.)",
+            HexToByte('02 2E 03 01 70 03'):"(I don't speak any Japanese.)",
+            HexToByte('02 2E 03 01 71 03'):"(I don't speak any French.)",
+            HexToByte('02 2E 03 01 72 03'):"(I don't speak any German.)",
+            HexToByte('02 2E 03 01 73 03'):"(Please listen.)",
+            HexToByte('02 2E 03 01 74 03'):"(Can you hear me?)",
+            HexToByte('02 2E 03 01 75 03'):"(I can speak a little.)",
+            HexToByte('02 2E 03 01 76 03'):"(I can understand a little.)",
+            HexToByte('02 2E 03 01 77 03'):"(Please use simple words.)",
+            HexToByte('02 2E 03 01 78 03'):"(Please do not abbreviate your words.)",
+            HexToByte('02 2E 03 01 79 03'):"(I need some time to put together my answer.)",
+            HexToByte('02 2E 03 02 CA 03'):"(Nice to meet you.)",
+            HexToByte('02 2E 03 02 CB 03'):"(Good morning!)",
+            HexToByte('02 2E 03 02 CC 03'):"(Hello!)",
+            HexToByte('02 2E 03 02 CD 03'):"(Good evening!)",
+            HexToByte('02 2E 03 02 CE 03'):"(Good night!)",
+            HexToByte('02 2E 03 02 CF 03'):"(Goodbye.)",
+            HexToByte('02 2E 04 02 F0 CF 03'):"(I had fun today!)",
+            HexToByte('02 2E 04 02 F0 D0 03'):"(See you again!)",
+            HexToByte('02 2E 04 02 F0 D1 03'):"(Let's play together again sometime!)",
+            HexToByte('02 2E 04 02 F0 D2 03'):"(I'm back!)",
+            HexToByte('02 2E 04 02 F0 D3 03'):"(Welcome back.)",
+            HexToByte('02 2E 04 02 F0 D4 03'):"(Congratulations!)",
+            HexToByte('02 2E 04 02 F0 D5 03'):"(Good job!)",
+            HexToByte('02 2E 04 02 F0 D6 03'):"(Good luck!)",
+            HexToByte('02 2E 04 02 F0 D7 03'):"(All right!)",
+            HexToByte('02 2E 04 02 F0 D8 03'):"(Thank you.)",
+            HexToByte('02 2E 04 02 F0 D9 03'):"(You're welcome.)",
+            HexToByte('02 2E 04 02 F0 DA 03'):"(Take care.)",
+            HexToByte('02 2E 04 02 F0 DB 03'):"(I'm sorry.)",
+            HexToByte('02 2E 04 02 F0 DC 03'):"(Please forgive me.)",
+            HexToByte('02 2E 04 02 F0 DD 03'):"(That's too bad.)",
+            HexToByte('02 2E 04 02 F0 DE 03'):"(Excuse me...)",
+            HexToByte('02 2E 05 03 F2 01 2D 03'):"(Who?)",
+            HexToByte('02 2E 05 03 F2 01 2E 03'):"(Which?)",
+            HexToByte('02 2E 05 03 F2 01 2F 03'):"(How?)",
+            HexToByte('02 2E 05 03 F2 01 30 03'):"(What?)",
+            HexToByte('02 2E 05 03 F2 01 31 03'):"(When?)",
+            HexToByte('02 2E 05 03 F2 01 32 03'):"(How many?)",
+            HexToByte('02 2E 05 03 F2 01 33 03'):"(Where?)",
+            HexToByte('02 2E 05 03 F2 01 34 03'):"(Where shall we go?)",
+            HexToByte('02 2E 05 03 F2 01 35 03'):"(Which guildleve shall we do?)",
+            HexToByte('02 2E 05 03 F2 01 37 03'):"(Do you have it?)",
+            HexToByte('02 2E 05 03 F2 01 38 03'):"(What weapons can you use?)",
+            HexToByte('02 2E 05 03 F2 01 39 03'):"(What guildleves do you have?)",
+            HexToByte('02 2E 05 03 F2 01 3B 03'):"(Can you do it?)",
+            HexToByte('02 2E 05 03 F2 01 3C 03'):"(What other classes can you use?)",
+            HexToByte('02 2E 05 03 F2 01 3D 03'):"(Do you have it set?)",
+            HexToByte('02 2E 05 03 F2 01 3E 03'):"(What's the battle plan?)",
+            HexToByte('02 2E 05 03 F2 01 3F 03'):"(What's the Battle Regimen order?)",
+            HexToByte('02 2E 05 03 F2 01 40 03'):"(Can I add you to my friend list?)",
+            HexToByte('02 2E 05 03 F2 01 41 03'):"(Shall we take a break?)",
+            HexToByte('02 2E 05 03 F2 01 42 03'):"(Do you want me to repair it?)",
+            HexToByte('02 2E 05 03 F2 01 43 03'):"(Do you need any help?)",
+            HexToByte('02 2E 05 04 F2 01 91 03'):"(I don't understand.)",
+            HexToByte('02 2E 05 04 F2 01 92 03'):"(No thanks.)",
+            HexToByte('02 2E 05 04 F2 01 93 03'):"(Yes, please.)",
+            HexToByte('02 2E 05 04 F2 01 94 03'):"(If you would be so kind.)",
+            HexToByte('02 2E 05 04 F2 01 95 03'):"(Understood.)",
+            HexToByte('02 2E 05 04 F2 01 96 03'):"(I'm sorry. I'm busy now.)",
+            HexToByte('02 2E 05 04 F2 01 97 03'):"(I'm playing solo right now.)",
+            HexToByte('02 2E 05 04 F2 01 98 03'):"(I don't know how ot answer that question.)",
+            HexToByte('02 2E 05 04 F2 01 99 03'):"(I see.)",
+            HexToByte('02 2E 05 04 F2 01 9A 03'):"(Thanks for the offer, but I'll have to pass.)",
+            HexToByte('02 2E 05 04 F2 01 9B 03'):"(That's interesting.)",
+            HexToByte('02 2E 05 04 F2 01 9C 03'):"(Um...)",
+            HexToByte('02 2E 05 04 F2 01 9D 03'):"(Huh!?)",
+            HexToByte('02 2E 05 04 F2 01 9E 03'):"(Really?)",
+            HexToByte('02 2E 05 04 F2 01 9F 03'):"(Hmmm.)",
+            HexToByte('02 2E 05 04 F2 01 A0 03'):"(I have to go soon.)",  
+            HexToByte('02 2E 05 05 F2 01 F5 03'):"(Casting spell.)",
+            HexToByte('02 2E 05 05 F2 01 F6 03'):"(Time for work!)",
+            HexToByte('02 2E 05 05 F2 01 F7 03'):"(I have plans.)",
+            HexToByte('02 2E 05 05 F2 01 F8 03'):"(I'm sleepy.)",
+            HexToByte('02 2E 05 05 F2 01 F9 03'):"(I'm tired.)",
+            HexToByte('02 2E 05 05 F2 01 FA 03'):"(Have stuff to do, gotta go!)",
+            HexToByte('02 2E 05 05 F2 01 FB 03'):"(I don't feel well.)",
+            HexToByte('02 2E 05 05 F2 01 FC 03'):"(I'm not up for it.)",
+            HexToByte('02 2E 05 05 F2 01 FD 03'):"(I'm interested.)",
+            HexToByte('02 2E 05 05 F2 01 FE 03'):"(Fighting right now!)",
+            HexToByte('02 2E 05 05 F2 01 FF 03'):"(I want to make money.)",
+            HexToByte('02 2E 04 05 F1 02 03'):"(I don't remember.)",
+            HexToByte('02 2E 05 05 F2 02 01 03'):"(I don't know.)",
+            HexToByte('02 2E 05 05 F2 02 02 03'):"(Just used it.)",
+            HexToByte('02 2E 05 05 F2 02 03 03'):"(I want experience points.)",
+            HexToByte('02 2E 05 05 F2 02 04 03'):"(I want skill points.)",
+            HexToByte('02 2E 05 06 F2 02 59 03'):"(Can I have it?)",
+            HexToByte('02 2E 05 06 F2 02 5A 03'):"(Can you do it for me?)",
+            HexToByte('02 2E 05 06 F2 02 5B 03'):"(Lower the price?)",
+            HexToByte('02 2E 05 06 F2 02 5C 03'):"(Buy?)",
+            HexToByte('02 2E 05 06 F2 02 5D 03'):"(Sell?)",
+            HexToByte('02 2E 05 06 F2 02 5E 03'):"(Trade?)",
+            HexToByte('02 2E 05 06 F2 02 5F 03'):"(Do you need it?)",
+            HexToByte('02 2E 05 06 F2 02 60 03'):"(Can you make it?)",
+            HexToByte('02 2E 05 06 F2 02 61 03'):"(Do you have it?)",
+            HexToByte('02 2E 05 06 F2 02 62 03'):"(Can you repair it?)",
+            HexToByte('02 2E 05 06 F2 02 63 03'):"(What materials are needed?)",
+            HexToByte('02 2E 05 06 F2 02 64 03'):"(No money!)",
+            HexToByte('02 2E 05 06 F2 02 65 03'):"(I don't have anything to give you.)",
+            HexToByte('02 2E 05 06 F2 02 66 03'):"(You can have this.)",
+            HexToByte('02 2E 05 06 F2 02 67 03'):"(Please.)",
+            HexToByte('02 2E 05 06 F2 02 68 03'):"(Reward:)",
+            HexToByte('02 2E 05 06 F2 02 69 03'):"(Price:)", 
+            HexToByte('02 2E 05 07 F2 02 BD 03'):"(Looking for members.)",
+            HexToByte('02 2E 05 07 F2 02 BE 03'):"(Gather together.)",
+            HexToByte('02 2E 05 07 F2 02 BF 03'):"(Team up?)",
+            HexToByte('02 2E 05 07 F2 02 C0 03'):"(Are you alone?)",
+            HexToByte('02 2E 05 07 F2 02 C1 03'):"(Any vacancies?)",
+            HexToByte('02 2E 05 07 F2 02 C2 03'):"(Please invite me.)",
+            HexToByte('02 2E 05 07 F2 02 C3 03'):"(Please let me join.)",
+            HexToByte('02 2E 05 07 F2 02 C4 03'):"(Who is the leader?)",
+            HexToByte('02 2E 05 07 F2 02 C5 03'):"(Just for a short time is fine.)",
+            HexToByte('02 2E 05 07 F2 02 C6 03'):"(Our party's full.)",
+            HexToByte('02 2E 05 07 F2 02 C7 03'):"(Please assist.)",
+            HexToByte('02 2E 05 07 F2 02 C8 03'):"(Disbanding party.)",
+            HexToByte('02 2E 05 07 F2 02 C9 03'):"(Taking a break.)",
+            HexToByte('02 2E 05 07 F2 02 CA 03'):"(It's better if physical levels aren't too far apart.)",
+            HexToByte('02 2E 05 07 F2 02 CB 03'):"(It's better if skill levels aren't too far apart.)",
+            HexToByte('02 2E 05 08 F2 03 21 03'):"(Please follow.)",
+            HexToByte('02 2E 05 08 F2 03 22 03'):"(I'll follow you.)",
+            HexToByte('02 2E 05 08 F2 03 23 03'):"(Please check it.)",
+            HexToByte('02 2E 05 08 F2 03 24 03'):"(Found it!)",
+            HexToByte('02 2E 05 08 F2 03 25 03'):"(Full attack!)",
+            HexToByte('02 2E 05 08 F2 03 26 03'):"(Pull back.)",
+            HexToByte('02 2E 05 08 F2 03 27 03'):"(Watch out for enemies.)",
+            HexToByte('02 2E 05 08 F2 03 28 03'):"(Defeat this one first!)",
+            HexToByte('02 2E 05 08 F2 03 29 03'):"(Please don't attack.)",
+            HexToByte('02 2E 05 08 F2 03 2A 03'):"(Please deactivate it.)",
+            HexToByte('02 2E 05 08 F2 03 2B 03'):"(Heal!)",
+            HexToByte('02 2E 05 08 F2 03 2C 03'):"(Run away!)",
+            HexToByte('02 2E 05 08 F2 03 2D 03'):"(Help me out!)",
+            HexToByte('02 2E 05 08 F2 03 2E 03'):"(Stop!)",
+            HexToByte('02 2E 05 08 F2 03 2F 03'):"(Standing by.)",
+            HexToByte('02 2E 05 08 F2 03 30 03'):"(None left.)",
+            HexToByte('02 2E 05 08 F2 03 31 03'):"(Don't have it.)",
+            HexToByte('02 2E 05 08 F2 03 32 03'):"(Please use it sparingly.)",
+            HexToByte('02 2E 05 08 F2 03 33 03'):"(I'll use it sparingly.)",
+            HexToByte('02 2E 05 08 F2 03 34 03'):"(I'm weakened.)",
+            HexToByte('02 2E 05 08 F2 03 35 03'):"(My gear is in poor condition.)",
+            HexToByte('02 2E 05 08 F2 03 36 03'):"(Ready!)",
+            HexToByte('02 2E 05 08 F2 03 37 03'):"(Making a Battle Regimen.)",
+            HexToByte('02 2E 05 08 F2 03 38 03'):"(Starting the Battle Regimen.)",
+            HexToByte('02 2E 05 08 F2 03 39 03'):"(Please set enemy marks.)",
+            HexToByte('02 2E 05 08 F2 03 3A 03'):"(Please set an ally mark.)",
+            HexToByte('02 2E 05 08 F2 03 3B 03'):"(Please use it.)",
+            HexToByte('02 2E 05 08 F2 03 3C 03'):"(Let's rest for a while.)",
+            HexToByte('02 2E 05 08 F2 03 3D 03'):"(Front line job)",
+            HexToByte('02 2E 05 08 F2 03 3E 03'):"(Support role job)",
+            HexToByte('02 2E 05 08 F2 03 3F 03'):"(Back line job)",
+            HexToByte('02 2E 05 08 F2 03 40 03'):"(Weakness)",
+            HexToByte('02 2E 05 08 F2 03 41 03'):"(Warning)",
+            HexToByte('02 2E 05 08 F2 03 42 03'):"(Recommend)",
+            HexToByte('02 2E 05 08 F2 03 43 03'):"(Kill Order)",
+            HexToByte('02 2E 05 09 F2 03 85 03'):"(Guildleve)",
+            HexToByte('02 2E 05 09 F2 03 87 03'):"(Quest)",
+            HexToByte('02 2E 05 09 F2 03 88 03'):"(Client)",
+            HexToByte('02 2E 05 09 F2 03 89 03'):"(Instance)",
+            HexToByte('02 2E 05 09 F2 03 8A 03'):"(Gil)",
+            HexToByte('02 2E 05 09 F2 03 8B 03'):"(Skill)",
+            HexToByte('02 2E 05 09 F2 03 8C 03'):"(Primary Skill)",
+            HexToByte('02 2E 05 09 F2 03 8D 03'):"(Primary Skill Rank)",
+            HexToByte('02 2E 05 09 F2 03 8E 03'):"(Physical Level)",
+            HexToByte('02 2E 05 09 F2 03 8F 03'):"(Skill Point)",
+            HexToByte('02 2E 05 09 F2 03 90 03'):"(Experience Points)",
+            HexToByte('02 2E 05 09 F2 03 91 03'):"(Affinity)",
+            HexToByte('02 2E 05 09 F2 03 92 03'):"(Attribute)",
+            HexToByte('02 2E 05 09 F2 03 93 03'):"(Elemental Resistance)",
+            HexToByte('02 2E 05 09 F2 03 94 03'):"(Fire)",
+            HexToByte('02 2E 05 09 F2 03 95 03'):"(Ice)",
+            HexToByte('02 2E 05 09 F2 03 96 03'):"(Wind)",
+            HexToByte('02 2E 05 09 F2 03 97 03'):"(Earth)",
+            HexToByte('02 2E 05 09 F2 03 98 03'):"(Lightning)",
+            HexToByte('02 2E 05 09 F2 03 99 03'):"(Water)",
+            HexToByte('02 2E 05 09 F2 03 9A 03'):"(Astral)",
+            HexToByte('02 2E 05 09 F2 03 9B 03'):"(Umbral)",
+            HexToByte('02 2E 05 09 F2 03 9C 03'):"(Guardian)",
+            HexToByte('02 2E 05 09 F2 03 9D 03'):"(Nameday)",
+            HexToByte('02 2E 05 09 F2 03 9E 03'):"(Race)",
+            HexToByte('02 2E 05 09 F2 03 9F 03'):"(Clan)",
+            HexToByte('02 2E 05 09 F2 03 A0 03'):"(Gender)",
+            HexToByte('02 2E 05 09 F2 03 A1 03'):"(Title)",
+            HexToByte('02 2E 05 09 F2 03 A2 03'):"(Quality)",
+            HexToByte('02 2E 05 09 F2 03 A3 03'):"(☆☆☆)",
+            HexToByte('02 2E 05 09 F2 03 A4 03'):"(☆☆)",
+            HexToByte('02 2E 05 09 F2 03 A5 03'):"(☆)",
+            HexToByte('02 2E 05 09 F2 03 A6 03'):"(Durability)",
+            HexToByte('02 2E 05 09 F2 03 AC 03'):"(To Repair)",
+            HexToByte('02 2E 05 09 F2 03 AD 03'):"(Status Effect)",
+            HexToByte('02 2E 05 09 F2 03 AE 03'):"(Cast Time)",
+            HexToByte('02 2E 05 09 F2 03 AF 03'):"(Recast Time)",
+            HexToByte('02 2E 05 09 F2 03 B0 03'):"(KO'd)",
+            HexToByte('02 2E 05 09 F2 03 B1 03'):"(Craft)",
+            HexToByte('02 2E 05 09 F2 03 B2 03'):"(Gathering)",
+            HexToByte('02 2E 05 09 F2 03 B3 03'):"(Negotiate)",
+            HexToByte('02 2E 05 09 F2 03 B4 03'):"(Guild Mark)",
+            HexToByte('02 2E 05 09 F2 03 B5 03'):"(Mark)",
+            HexToByte('02 2E 05 09 F2 03 B6 03'):"(Linkshell)",
+            HexToByte('02 2E 05 09 F2 03 B7 03'):"(Linkpearl)",
+            HexToByte('02 2E 05 09 F2 03 B8 03'):"(Active Mode)",
+            HexToByte('02 2E 05 09 F2 03 B9 03'):"(Passive Mode)",
+            HexToByte('02 2E 05 09 F2 03 BA 03'):"(Action)",
+            HexToByte('02 2E 05 09 F2 03 BB 03'):"(Magic)",
+            HexToByte('02 2E 05 09 F2 03 BC 03'):"(Weaponskill)",
+            HexToByte('02 2E 05 09 F2 03 BD 03'):"(Ability)",
+            HexToByte('02 2E 05 09 F2 03 BE 03'):"(Trait)",
+            HexToByte('02 2E 05 09 F2 03 BF 03'):"(Gathering Actions)",
+            HexToByte('02 2E 05 09 F2 03 C0 03'):"(Synthesis Actions)",
+            HexToByte('02 2E 05 09 F2 03 C1 03'):"(Engage)",
+            HexToByte('02 2E 05 09 F2 03 C2 03'):"(Disengage)",
+            HexToByte('02 2E 05 09 F2 03 C3 03'):"(Incapacitated)",
+            HexToByte('02 2E 05 09 F2 03 C4 03'):"(Battle Regimen)",
+            HexToByte('02 2E 05 09 F2 03 C5 03'):"(Enmity)",
+            HexToByte('02 2E 05 09 F2 03 C6 03'):"(Loot)",
+            HexToByte('02 2E 05 09 F2 03 C7 03'):"(Enemy Sign)",
+            HexToByte('02 2E 05 09 F2 03 C8 03'):"(Ally Sign)",
+            HexToByte('02 2E 05 09 F2 03 C9 03'):"(Target)",            
+            HexToByte('02 2E 05 09 F2 03 CA 03'):"((Gear) Affinity)",
+            HexToByte('02 2E 05 09 F2 03 CB 03'):"(Rare)",
+            HexToByte('02 2E 05 09 F2 03 CC 03'):"(Unique)",
+            HexToByte('02 2E 05 09 F2 03 CD 03'):"(Party)",
+            HexToByte('02 2E 05 09 F2 03 CE 03'):"(Map)",
+            HexToByte('02 2E 05 09 F2 03 CF 03'):"(Log out)",
+            HexToByte('02 2E 05 09 F2 03 D0 03'):"(Indent)",
+            HexToByte('02 2E 05 09 F2 03 D1 03'):"(Pattern)",
+            HexToByte('02 2E 05 09 F2 03 D2 03'):"(Retainer)",
+            HexToByte('02 2E 05 09 F2 03 D3 03'):"(Chocobo)",
+            HexToByte('02 2E 05 09 F2 03 D4 03'):"(Aetheryte)",
+            HexToByte('02 2E 05 09 F2 03 D5 03'):"(Aetherial Gate)",
+            HexToByte('02 2E 05 09 F2 03 D6 03'):"(Aetherial Node)",
+            HexToByte('02 2E 05 09 F2 03 D7 03'):"(Trade)",
+            HexToByte('02 2E 05 09 F2 03 D8 03'):"(Bazaar)",
+            HexToByte('02 2E 05 09 F2 03 D9 03'):"(Repair)",
+            HexToByte('02 2E 05 09 F2 03 DA 03'):"(Auto-translation Dictionary)",
+            HexToByte('02 2E 05 09 F2 03 DB 03'):"(Teleport)",            
+            HexToByte('02 2E 05 09 F2 03 DC 03'):"(Warp)",
+            HexToByte('02 2E 05 09 F2 03 DD 03'):"(Guild Shop)",
+            HexToByte('02 2E 05 09 F2 03 DE 03'):"(Hyur)",
+            HexToByte('02 2E 05 09 F2 03 DF 03'):"(Elezen)",
+            HexToByte('02 2E 05 09 F2 03 E0 03'):"(Lalafell)",
+            HexToByte('02 2E 05 09 F2 03 E1 03'):"(Miqo'te)",
+            HexToByte('02 2E 05 09 F2 03 E2 03'):"(Roegadyn)",
+            HexToByte('02 2E 05 09 F2 03 E3 03'):"(Midlander)",
+            HexToByte('02 2E 05 09 F2 03 E4 03'):"(Highlander)",
+            HexToByte('02 2E 05 09 F2 03 E5 03'):"(Wildwood)",
+            HexToByte('02 2E 05 09 F2 03 E6 03'):"(Duskwight)",
+            HexToByte('02 2E 05 09 F2 03 E7 03'):"(Plainsfolk)",
+            HexToByte('02 2E 05 09 F2 03 E8 03'):"(Dunesfolk)",
+            HexToByte('02 2E 05 09 F2 03 E9 03'):"(Seeker of the Sun)",
+            HexToByte('02 2E 05 09 F2 03 EA 03'):"(Keeper of the Moon)",
+            HexToByte('02 2E 05 09 F2 03 EB 03'):"(Sea Wolf)",
+            HexToByte('02 2E 05 09 F2 03 EC 03'):"(Hellsguard)",
+            HexToByte('02 2E 05 09 F2 03 ED 03'):"(Diciples of War)",
+            HexToByte('02 2E 05 09 F2 03 EE 03'):"(Disciples of Magic)",
+            HexToByte('02 2E 05 09 F2 03 EF 03'):"(Disciples of the Land)",
+            HexToByte('02 2E 05 09 F2 03 F0 03'):"(Disciples of the Hand)",
+            HexToByte('02 2E 05 0A F2 04 B1 03'):"(/?)",
+            HexToByte('02 2E 05 0A F2 04 B2 03'):"(/action)",
+            HexToByte('02 2E 05 0A F2 04 B3 03'):"(/angry)",
+            HexToByte('02 2E 05 0A F2 04 B4 03'):"(/areaofeffect)",
+            HexToByte('02 2E 05 0A F2 04 B5 03'):"(/automove)",
+            HexToByte('02 2E 05 0A F2 04 B6 03'):"(/away)",
+            HexToByte('02 2E 05 0A F2 04 B7 03'):"(/battlemode)",
+            HexToByte('02 2E 05 0A F2 04 B8 03'):"(/battleregimen)",
+            HexToByte('02 2E 05 0A F2 04 B9 03'):"(/beckon)",
+            HexToByte('02 2E 05 0A F2 04 BA 03'):"(/blacklist)",
+            HexToByte('02 2E 05 0A F2 04 BB 03'):"(/blush)",
+            HexToByte('02 2E 05 0A F2 04 BC 03'):"(/bow)",
+            HexToByte('02 2E 05 0A F2 04 BE 03'):"(/chatmode)",
+            HexToByte('02 2E 05 0A F2 04 BF 03'):"(/check)",
+            HexToByte('02 2E 05 0A F2 04 C0 03'):"(/cheer)",
+            HexToByte('02 2E 05 0A F2 04 C1 03'):"(/chuckle)",
+            HexToByte('02 2E 05 0A F2 04 C2 03'):"(/clap)",
+            HexToByte('02 2E 05 0A F2 04 C3 03'):"(/clock)",
+            HexToByte('02 2E 05 0A F2 04 C4 03'):"(/comfort)",
+            HexToByte('02 2E 05 0A F2 04 C6 03'):"(/congratulate)",
+            HexToByte('02 2E 05 0A F2 04 C7 03'):"(/cry)",
+            HexToByte('02 2E 05 0A F2 04 C8 03'):"(/dance)",
+            HexToByte('02 2E 05 0A F2 04 C9 03'):"(/decline)",
+            HexToByte('02 2E 05 0A F2 04 CA 03'):"(/deny)",
+            HexToByte('02 2E 05 0A F2 04 CD 03'):"(/display)",
+            HexToByte('02 2E 05 0A F2 04 CB 03'):"(/doubt)",
+            HexToByte('02 2E 05 0A F2 04 CC 03'):"(/doze)",
+            HexToByte('02 2E 05 0A F2 04 CE 03'):"(/dusteffect)",
+            HexToByte('02 2E 05 0A F2 04 CF 03'):"(/echo)",
+            HexToByte('02 2E 05 0A F2 04 D0 03'):"(/emote)",
+            HexToByte('02 2E 05 0A F2 04 D1 03'):"(/equip)",
+            HexToByte('02 2E 05 0A F2 04 D2 03'):"(/equipaction)",
+            HexToByte('02 2E 05 0A F2 04 D3 03'):"(/examineself)",
+            HexToByte('02 2E 05 0A F2 04 D4 03'):"(/extendeddraw)",
+            HexToByte('02 2E 05 0A F2 04 D6 03'):"(/friendlist)",
+            HexToByte('02 2E 05 0A F2 04 D7 03'):"(/fume)",
+            HexToByte('02 2E 05 0A F2 04 D8 03'):"(/furious)",
+            HexToByte('02 2E 05 0A F2 04 D9 03'):"(/goodbye)",
+            HexToByte('02 2E 05 0A F2 04 DB 03'):"(/item)",
+            HexToByte('02 2E 05 0A F2 04 DC 03'):"(/join)",
+            HexToByte('02 2E 05 0A F2 04 DD 03'):"(/joy)",
+            HexToByte('02 2E 05 0A F2 04 DE 03'):"(/kneel)",
+            HexToByte('02 2E 05 0A F2 04 DF 03'):"(/laugh)",
+            HexToByte('02 2E 05 0A F2 04 E0 03'):"(/linkshell)",
+            HexToByte('02 2E 05 0A F2 04 E2 03'):"(/lockon)",
+            HexToByte('02 2E 05 0A F2 04 E3 03'):"(/logout)",
+            HexToByte('02 2E 05 0A F2 04 E4 03'):"(/lookout)",
+            HexToByte('02 2E 05 0A F2 04 E5 03'):"(/loot)",   
+            HexToByte('02 2E 05 0A F2 04 E7 03'):"(/map)",
+            HexToByte('02 2E 05 0A F2 04 E8 03'):"(/marking)",
+            HexToByte('02 2E 05 0A F2 04 E9 03'):"(/me)",
+            HexToByte('02 2E 05 0A F2 04 EA 03'):"(/meh)",
+            HexToByte('02 2E 05 0A F2 04 EB 03'):"(/names)",
+            HexToByte('02 2E 05 0A F2 04 EC 03'):"(/no)",
+            HexToByte('02 2E 05 0A F2 04 EE 03'):"(/panic)",
+            HexToByte('02 2E 05 0A F2 04 EF 03'):"(/party)",
+            HexToByte('02 2E 05 0A F2 04 F0 03'):"(/partycmd)",
+            HexToByte('02 2E 05 0A F2 04 F1 03'):"(/physics)",
+            HexToByte('02 2E 05 0A F2 04 F3 03'):"(/point)",
+            HexToByte('02 2E 05 0A F2 04 F4 03'):"(/poke)",
+            HexToByte('02 2E 05 0A F2 04 F5 03'):"(/profanity)",
+            HexToByte('02 2E 05 0A F2 04 F6 03'):"(/psych)",
+            HexToByte('02 2E 05 0A F2 04 F7 03'):"(/rally)",
+            HexToByte('02 2E 05 0A F2 04 F8 03'):"(/recast)",
+            HexToByte('02 2E 05 0A F2 04 F9 03'):"(/salute)",
+            HexToByte('02 2E 05 0A F2 04 FA 03'):"(/say)",
+            HexToByte('02 2E 05 0A F2 04 FB 03'):"(/scrollingbattletext)",
+            HexToByte('02 2E 05 0A F2 04 FD 03'):"(/shadow)",
+            HexToByte('02 2E 05 0A F2 04 FE 03'):"(/shocked)",
+            HexToByte('02 2E 05 0A F2 04 FF 03'):"(/shout)",
+            HexToByte('02 2E 04 0A F1 05 03'):"(/shrug)",
+            HexToByte('02 2E 05 0A F2 05 01 03'):"(/sit)",
+            HexToByte('02 2E 05 0A F2 05 02 03'):"(/soothe)",
+            HexToByte('02 2E 05 0A F2 05 03 03'):"(/stagger)",
+            HexToByte('02 2E 05 0A F2 05 04 03'):"(/stretch)",
+            HexToByte('02 2E 05 0A F2 05 05 03'):"(/sulk)",
+            HexToByte('02 2E 05 0A F2 05 06 03'):"(/supportdesk)",
+            HexToByte('02 2E 05 0A F2 05 07 03'):"(/surprised)",
+            HexToByte('02 2E 05 0A F2 05 09 03'):"(/targetnpc)",
+            HexToByte('02 2E 05 0A F2 05 0A 03'):"(/targetpc)",
+            HexToByte('02 2E 05 0A F2 05 0B 03'):"(/tell)",
+            HexToByte('02 2E 05 0A F2 05 15 03'):"(/textclear)",
+            HexToByte('02 2E 05 0A F2 05 0C 03'):"(/think)",            
+            HexToByte('02 2E 05 0A F2 05 0D 03'):"(/thumbsup)",
+            HexToByte('02 2E 05 0A F2 05 0E 03'):"(/upset)",
+            HexToByte('02 2E 05 0A F2 05 10 03'):"(/wait)",
+            HexToByte('02 2E 05 0A F2 05 11 03'):"(/wave)",
+            HexToByte('02 2E 05 0A F2 05 12 03'):"(/welcome)",
+            HexToByte('02 2E 05 0A F2 05 14 03'):"(/yes)",
+            HexToByte('02 2E 05 0B F2 05 DD 03'):"(North)",
+            HexToByte('02 2E 05 0B F2 05 DE 03'):"(South)",
+            HexToByte('02 2E 05 0B F2 05 DF 03'):"(East)",
+            HexToByte('02 2E 05 0B F2 05 E0 03'):"(West)",
+            HexToByte('02 2E 05 0B F2 05 E1 03'):"(Up)",
+            HexToByte('02 2E 05 0B F2 05 E2 03'):"(Down)",
+            HexToByte('02 2E 05 0B F2 05 E3 03'):"(Right)",
+            HexToByte('02 2E 05 0B F2 05 E4 03'):"(Left)",
+            HexToByte('02 2E 05 0B F2 05 E5 03'):"(Surface)",
+            HexToByte('02 2E 05 0B F2 05 E6 03'):"(Rear)",
+            HexToByte('02 2E 05 0B F2 05 E7 03'):"(Side)",
+            HexToByte('02 2E 05 0B F2 05 E8 03'):"(Front)",
+            HexToByte('02 2E 05 0B F2 05 E9 03'):"(Middle)",
+            HexToByte('02 2E 05 0B F2 05 EA 03'):"(Flank)",
+            HexToByte('02 2E 05 0B F2 05 EB 03'):"(Inside)",
+            HexToByte('02 2E 05 0B F2 05 EC 03'):"(Outside)",
+            HexToByte('02 2E 05 0B F2 05 ED 03'):"(This way)",
+            HexToByte('02 2E 05 0B F2 05 EE 03'):"(Over there)",
+            HexToByte('02 2E 05 0B F2 05 EF 03'):"(That way)",
+            HexToByte('02 2E 05 0C F2 06 41 03'):"(Day before yesterday)",
+            HexToByte('02 2E 05 0C F2 06 42 03'):"(Yesterday)",
+            HexToByte('02 2E 05 0C F2 06 43 03'):"(Today)",
+            HexToByte('02 2E 05 0C F2 06 44 03'):"(Tomorrow)",
+            HexToByte('02 2E 05 0C F2 06 45 03'):"(Day after tomorrow)",
+            HexToByte('02 2E 05 0C F2 06 46 03'):"(Last week)",
+            HexToByte('02 2E 05 0C F2 06 47 03'):"(This week)",
+            HexToByte('02 2E 05 0C F2 06 48 03'):"(Next week)",
+            HexToByte('02 2E 05 0C F2 06 49 03'):"(a.m.)",
+            HexToByte('02 2E 05 0C F2 06 4A 03'):"(p.m.)",
+            HexToByte('02 2E 05 0C F2 06 4B 03'):"(Morning)",
+            HexToByte('02 2E 05 0C F2 06 4C 03'):"(Afternoon)",
+            HexToByte('02 2E 05 0C F2 06 4D 03'):"(Night)",
+            HexToByte('02 2E 05 0C F2 06 4E 03'):"(Day of the week)",
+            HexToByte('02 2E 05 0C F2 06 4F 03'):"(Sunday)",
+            HexToByte('02 2E 05 0C F2 06 50 03'):"(Monday)",
+            HexToByte('02 2E 05 0C F2 06 51 03'):"(Tuesday)",
+            HexToByte('02 2E 05 0C F2 06 52 03'):"(Wednesday)",
+            HexToByte('02 2E 05 0C F2 06 53 03'):"(Thursday)",
+            HexToByte('02 2E 05 0C F2 06 54 03'):"(Friday)",
+            HexToByte('02 2E 05 0C F2 06 55 03'):"(Saturday)",
+            HexToByte('02 2E 05 0C F2 06 56 03'):"(Holiday)",
+            HexToByte('02 2E 05 0C F2 06 57 03'):"(Break)",
+            HexToByte('02 2E 05 0C F2 06 5A 03'):"(Second)",
+            HexToByte('02 2E 05 0C F2 06 58 03'):"(Long time)",
+            HexToByte('02 2E 05 0C F2 06 59 03'):"(Short time)",
+            HexToByte('02 2E 05 0C F2 06 5B 03'):"(Minute)",
+            HexToByte('02 2E 05 0C F2 06 5C 03'):"(Hour)",
+            HexToByte('02 2E 05 0C F2 06 5D 03'):"(Time remaining)",
+            HexToByte('02 2E 05 0C F2 06 5E 03'):"(January)",
+            HexToByte('02 2E 05 0C F2 06 5F 03'):"(February)",
+            HexToByte('02 2E 05 0C F2 06 60 03'):"(March (Month))",
+            HexToByte('02 2E 05 0C F2 06 61 03'):"(April)",
+            HexToByte('02 2E 05 0C F2 06 62 03'):"(May)",
+            HexToByte('02 2E 05 0C F2 06 63 03'):"(June)",
+            HexToByte('02 2E 05 0C F2 06 64 03'):"(July)",
+            HexToByte('02 2E 05 0C F2 06 65 03'):"(August)",
+            HexToByte('02 2E 05 0C F2 06 66 03'):"(September)",
+            HexToByte('02 2E 05 0C F2 06 67 03'):"(October)",
+            HexToByte('02 2E 05 0C F2 06 68 03'):"(November)",
+            HexToByte('02 2E 05 0C F2 06 69 03'):"(December)",
+            HexToByte('02 2E 05 0D F2 06 A5 03'):"(Connection Speed)",
+            HexToByte('02 2E 05 0D F2 06 A6 03'):"(Blacklist)",
+            HexToByte('02 2E 05 0D F2 06 A7 03'):"(Friend List)",
+            HexToByte('02 2E 05 0D F2 06 A8 03'):"(Config)",
+            HexToByte('02 2E 05 0D F2 06 A9 03'):"(Connection)",
+            HexToByte('02 2E 05 0D F2 06 AA 03'):"(Screenshot)",
+            HexToByte('02 2E 05 0D F2 06 AB 03'):"(Patch)",
+            HexToByte('02 2E 05 0D F2 06 AC 03'):"(Version)",
+            HexToByte('02 2E 05 0D F2 06 AD 03'):"(Connection Lost)",
+            HexToByte('02 2E 05 0D F2 06 AE 03'):"(Lag)",
+            HexToByte('02 2E 05 0D F2 06 AF 03'):"(Filter)",
+            HexToByte('02 2E 05 0D F2 06 B0 03'):"(Client)",
+            HexToByte('02 2E 05 0D F2 06 B1 03'):"(Backup)",
+            HexToByte('02 2E 05 0D F2 06 B3 03'):"(Save)",
+            HexToByte('02 2E 05 0D F2 06 B4 03'):"(TV)",
+            HexToByte('02 2E 05 0D F2 06 B5 03'):"(Modem)",
+            HexToByte('02 2E 05 0D F2 06 B6 03'):"(Monitor)",
+            HexToByte('02 2E 05 0D F2 06 B7 03'):"(Log off)",
+            HexToByte('02 2E 05 0D F2 06 B8 03'):"(Log on)",
+            HexToByte('02 2E 05 0D F2 06 B9 03'):"(Hard Disk)",
+            HexToByte('02 2E 05 0D F2 06 BA 03'):"(Server)",
+            HexToByte('02 2E 05 0D F2 06 BB 03'):"(Macro)",
+            HexToByte('02 2E 05 0E F2 07 09 03'):"(Online)",
+            HexToByte('02 2E 05 0E F2 07 0A 03'):"(Away)",
+            HexToByte('02 2E 05 0F F2 07 6D 03'):"(Numeric keypad)",
+            HexToByte('02 2E 05 0F F2 07 6E 03'):"(Arrow keys)",
+            HexToByte('02 2E 05 0F F2 07 6F 03'):"(Tab key)",
+            HexToByte('02 2E 05 0F F2 07 70 03'):"(Enter key)",
+            HexToByte('02 2E 05 0F F2 07 71 03'):"(End key)",
+            HexToByte('02 2E 05 0F F2 07 72 03'):"(Num Lock key)",
+            HexToByte('02 2E 05 0F F2 07 73 03'):"(Function keys)",
+            HexToByte('02 2E 05 0F F2 07 74 03'):"(Spacebar)",
+            HexToByte('02 2E 05 0F F2 07 75 03'):"(Backspace key)",
+            HexToByte('02 2E 05 0F F2 07 76 03'):"(Halfwidth/Fullwidth key)",
+            HexToByte('02 2E 05 0F F2 07 77 03'):"(Alt key)",
+            HexToByte('02 2E 05 0F F2 07 78 03'):"(Insert key)",
+            HexToByte('02 2E 05 0F F2 07 79 03'):"(Page Down key)",
+            HexToByte('02 2E 05 0F F2 07 7A 03'):"(Home key)",
+            HexToByte('02 2E 05 0F F2 07 7B 03'):"(Page Up key)",
+            HexToByte('02 2E 05 0F F2 07 7C 03'):"(Caps Lock key)",
+            HexToByte('02 2E 05 0F F2 07 7D 03'):"(Shift key)",
+            HexToByte('02 2E 05 0F F2 07 7E 03'):"(Esc key)",
+            HexToByte('02 2E 05 0F F2 07 7F 03'):"(Ctrl key)",
+            HexToByte('02 2E 05 0F F2 07 80 03'):"(Delete key)",            
+            HexToByte('02 2E 05 10 F2 07 D1 03'):"(notice)",
+            HexToByte('02 2E 05 10 F2 07 D2 03'):"(place)",
+            HexToByte('02 2E 05 10 F2 07 D3 03'):"(meat)",
+            HexToByte('02 2E 05 10 F2 07 D4 03'):"(train)",
+            HexToByte('02 2E 05 10 F2 07 D5 03'):"(last)",
+            HexToByte('02 2E 05 10 F2 07 D7 03'):"(question)",
+            HexToByte('02 2E 05 10 F2 07 D6 03'):"(death)",
+            HexToByte('02 2E 05 10 F2 07 D8 03'):"(joy)",
+            HexToByte('02 2E 05 10 F2 07 D9 03'):"(mistake)",
+            HexToByte('02 2E 05 10 F2 07 DA 03'):"(purpose)",
+            HexToByte('02 2E 05 10 F2 07 DB 03'):"(half)",
+            HexToByte('02 2E 05 10 F2 07 DC 03'):"(date)",
+            HexToByte('02 2E 05 10 F2 07 DD 03'):"(secret)",
+            HexToByte('02 2E 05 10 F2 07 DE 03'):"(position)",
+            HexToByte('02 2E 05 10 F2 07 DF 03'):"(lie)",
+            HexToByte('02 2E 05 10 F2 07 E0 03'):"(excitement)",
+            HexToByte('02 2E 05 10 F2 07 E1 03'):"(money)",
+            HexToByte('02 2E 05 10 F2 07 E2 03'):"(fear)",
+            HexToByte('02 2E 05 10 F2 07 E3 03'):"(friend)",
+            HexToByte('02 2E 05 10 F2 07 E4 03'):"(entrance)",
+            HexToByte('02 2E 05 10 F2 07 E5 03'):"(exit)",
+            HexToByte('02 2E 05 10 F2 07 E6 03'):"(mine)",
+            HexToByte('02 2E 05 10 F2 07 E7 03'):"(fun)",
+            HexToByte('02 2E 05 10 F2 07 E8 03'):"(I)",
+            HexToByte('02 2E 05 10 F2 07 E9 03'):"(you)",            
+            HexToByte('02 2E 03 11 02 03'):"(Halone, the Fury)",
+            HexToByte('02 2E 03 11 03 03'):"(Menphina, the Lover)",
+            HexToByte('02 2E 03 11 04 03'):"(Thaliak, the Scholar)",
+            HexToByte('02 2E 03 11 05 03'):"(Nymeia, the Spinner)",
+            HexToByte('02 2E 03 11 06 03'):"(Llymlaen, the Navigator)",
+            HexToByte('02 2E 03 11 07 03'):"(Oschon, the Wanderer)",
+            HexToByte('02 2E 03 11 08 03'):"(Byregot, the Builder)",
+            HexToByte('02 2E 03 11 09 03'):"(Rhalgr, the Destroyer)",
+            HexToByte('02 2E 03 11 0A 03'):"(Azeyma, the Warden)",
+            HexToByte('02 2E 03 11 0B 03'):"(Nald'thal, the Traders)",
+            HexToByte('02 2E 03 11 0C 03'):"(Nophica, the Matron)",
+            HexToByte('02 2E 03 11 0D 03'):"(Althyk, the Keeper)",
+            HexToByte('02 2E 03 12 02 03'):"(Main hand)",
+            HexToByte('02 2E 03 12 03 03'):"(Off Hand)",
+            HexToByte('02 2E 03 12 06 03'):"(Throwing Weapon)",
+            HexToByte('02 2E 03 12 07 03'):"(Pack)",
+            HexToByte('02 2E 03 12 08 03'):"(Pouch)",
+            HexToByte('02 2E 03 12 0A 03'):"(Head)",
+            HexToByte('02 2E 03 12 0B 03'):"(Undershirt)",
+            HexToByte('02 2E 03 12 0C 03'):"(Body)",
+            HexToByte('02 2E 03 12 0D 03'):"(Undergarment)",
+            HexToByte('02 2E 03 12 0E 03'):"(Legs)",
+            HexToByte('02 2E 03 12 0F 03'):"(Hands)",
+            HexToByte('02 2E 03 12 10 03'):"(Feet)",
+            HexToByte('02 2E 03 12 11 03'):"(Waist)",
+            HexToByte('02 2E 03 12 12 03'):"(Neck)",
+            HexToByte('02 2E 03 12 13 03'):"(Right Ear)",
+            HexToByte('02 2E 03 12 14 03'):"(Left Ear)",
+            HexToByte('02 2E 03 12 15 03'):"(Right Wrist)",
+            HexToByte('02 2E 03 12 16 03'):"(Left Wrist)",
+            HexToByte('02 2E 03 12 17 03'):"(Right Index Finger)",
+            HexToByte('02 2E 03 12 18 03'):"(Left Index Finger)",
+            HexToByte('02 2E 03 12 19 03'):"(Right Ring Finger)",
+            HexToByte('02 2E 03 12 20 03'):"(Left Right Finger)", # may be buggy
+            HexToByte('02 2E 03 12'):"(Left Right Finger)", # may be buggy
+            HexToByte('02 2E 03 13 03 03'):"(Hand-to-Hand)",
+            HexToByte('02 2E 03 13 04 03'):"(Sword)",
+            HexToByte('02 2E 03 13 05 03'):"(Axe)",
+            HexToByte('02 2E 03 13 08 03'):"(Archery)",
+            HexToByte('02 2E 03 13 09 03'):"(Polearm)",
+            HexToByte('02 2E 03 13 0B 03'):"(Shield)",
+            HexToByte('02 2E 03 13 17 03'):"(Thaumaturgy)",
+            HexToByte('02 2E 03 13 18 03'):"(Conjury)",
+            HexToByte('02 2E 03 13 1E 03'):"(Woodworking)",
+            HexToByte('02 2E 03 13 1F 03'):"(Smithing)",
+            HexToByte('02 2E 03 13 20 03'):"(Armorcraft)",
+            HexToByte('02 2E 03 13 21 03'):"(Goldsmithing)",
+            HexToByte('02 2E 03 13 22 03'):"(Leatherworking)",
+            HexToByte('02 2E 03 13 23 03'):"(Clothcraft)",
+            HexToByte('02 2E 03 13 24 03'):"(Alchemy)",
+            HexToByte('02 2E 03 13 25 03'):"(Cooking)",
+            HexToByte('02 2E 03 13 28 03'):"(Mining)",
+            HexToByte('02 2E 03 13 29 03'):"(Botany)",
+            HexToByte('02 2E 03 13 2A 03'):"(Fishing)",
+            HexToByte('02 2E 03 14 03 03'):"(Pugilist)",
+            HexToByte('02 2E 03 14 04 03'):"(Gladiator)",
+            HexToByte('02 2E 03 14 05 03'):"(Marauder)",
+            HexToByte('02 2E 03 14 08 03'):"(Archer)",
+            HexToByte('02 2E 03 14 09 03'):"(Lancer)",
+            HexToByte('02 2E 03 14 17 03'):"(Thaumaturge)",
+            HexToByte('02 2E 03 14 18 03'):"(Conjurer)",
+            HexToByte('02 2E 03 14 1E 03'):"(Carpenter)",
+            HexToByte('02 2E 03 14 1F 03'):"(Blacksmith)",
+            HexToByte('02 2E 03 14 20 03'):"(Armorer)",
+            HexToByte('02 2E 03 14 21 03'):"(Goldsmith)",
+            HexToByte('02 2E 03 14 22 03'):"(Leatherworker)",
+            HexToByte('02 2E 03 14 23 03'):"(Weaver)",
+            HexToByte('02 2E 03 14 24 03'):"(Alchemist)",
+            HexToByte('02 2E 03 14 25 03'):"(Culinarian)",
+            HexToByte('02 2E 03 14 28 03'):"(Miner)",
+            HexToByte('02 2E 03 14 29 03'):"(Botanist)",
+            HexToByte('02 2E 03 14 2A 03'):"(Fisher)",            
+            }
+
+    def printCrafting(self, currentcrafting):
+        #self.craftingdata
+        #print currentcrafting
+        #raw_input("")
+        return
+
+    def printDamage(self, currentmonster):
+        if len(currentmonster["damage"]) > 0:
+            hitpercent = 100
+            criticalavg = 0
+            criticalavgcount = 0
+            regularavg = 0
+            regularavgcount = 0
+            criticaldmgavg = 0
+            regulardmgavg = 0
+            totaldmgavg = 0
+            hitdmgavg = 0
+            hitdmgavgcount = 0
+            crithitdmgavg = 0
+            crithitdmgavgcount = 0
+            totalhitdmgavg = 0
+            othertotaldmg = 0
+            for otherdamage in currentmonster["otherdamage"]:
+                if otherdamage[0] == '':
+                    continue
+                othertotaldmg += int(otherdamage[0])
+            for hitdamage in currentmonster["hitdamage"]:
+                if hitdamage[0] == '':
+                    continue
+                if hitdamage[1] == True:
+                    crithitdmgavg = crithitdmgavg + int(hitdamage[0])
+                    crithitdmgavgcount = crithitdmgavgcount + 1
+                else:
+                    hitdmgavg = hitdmgavg + int(hitdamage[0])
+                    hitdmgavgcount = hitdmgavgcount + 1
+
+            for damage in currentmonster["damage"]:
+                if damage[0] == '':
+                    continue
+                if damage[1] == True:
+                    criticalavg = criticalavg + int(damage[0])
+                    criticalavgcount = criticalavgcount + 1
+                else:
+                    regularavg = regularavg + int(damage[0])
+                    regularavgcount = regularavgcount + 1
+            if crithitdmgavg != 0:
+                crithitdmgavg = crithitdmgavg / crithitdmgavgcount
+            if hitdmgavg != 0:
+                hitdmgavg = hitdmgavg / hitdmgavgcount
+            if crithitdmgavg + hitdmgavg != 0:
+                totalhitdmgavg = (crithitdmgavg + hitdmgavg) / (crithitdmgavgcount + hitdmgavgcount)
+            if criticalavg != 0:
+                criticaldmgavg = criticalavg / criticalavgcount
+            if regularavg != 0:
+                regulardmgavg = regularavg / regularavgcount
+            if criticalavg + regularavg != 0:
+                totaldmgavg = (criticalavg + regularavg) / (criticalavgcount + regularavgcount)
+            if currentmonster["miss"] > 0:
+                hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
+                hitpercent = (100 - hitpercent)
+            print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nExp: %i\nSkill Points: %i\nDate Time: %s\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
+            self.monsterdata.append(currentmonster)
+            #if len(monsterdata) > 20:
+            #    uploadToDB()
+
+    def useitem(self, logitem):
+        if self.craftingcomplete == 1:
+            printCrafting(self.currentcrafting)
+            self.currentcrafting = copy.deepcopy(self.defaultcrafting)
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.craftingcomplete = 0
+        if logitem.find("Standard Synthesis") != -1:
+            # store previous value if valid:
+            if self.synthtype != "":
+                self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
+                self.progress = []
+                self.durability = []
+                self.quality = []
+            self.synthtype = "Standard"
+        elif logitem.find("Rapid Synthesis") != -1:
+            if self.synthtype != "":
+                self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
+                self.progress = []
+                self.durability = []
+                self.quality = []
+            self.synthtype = "Rapid"
+        elif logitem.find("Bold Synthesis") != -1:
+            if self.synthtype != "":
+                self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
+                self.progress = []
+                self.durability = []
+                self.quality = []
+            self.synthtype = "Bold"
+        else:
+            #print logitem
+            # TODO: need to handle all special types or they will be ingredients, setup
+            # an array with all traits and abilities and compare.
+            if logitem.find("You use a") != -1:
+                ingcount = 1
+            elif logitem.find("Touch Up") != -1:
+                return
+            else:
+                try:
+                    ingcount = int(logitem.split(" ")[2])
+                except ValueError:
+                    # this is a special so skip it for now...
+                    return
+            if logitem.find(" of ") != -1:
+                ingredient = logitem[logitem.find(" of ") +4:-1]
+            else:
+                ingredient = " ".join(logitem.split(" ")[3:])[:-1]
+            self.currentcrafting["ingredients"].append([ingredient, ingcount])
+    
+    def engaged(self, logitem):
+        if self.craftingcomplete == 1:
+            self.printCrafting(self.currentcrafting)
+            self.currentcrafting = copy.deepcopy(self.defaultcrafting)
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.craftingcomplete = 0
+        if logitem.find("You cannot change classes") != -1 or logitem.find("Levequest difficulty") != -1:
+            return
+        if self.defeated and self.spset:
+            self.defeated = False
+            self.spset = False
+            self.printDamage(self.currentmonster)
+
+            self.currentmonster = copy.deepcopy(self.defaultmonster)
+            self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.currentmonster["monster"] = logitem[logitem.find("The ") +4:logitem.find(" is")]
+            self.currentmonster["monster"] = self.currentmonster["monster"].split('\'')[0]
+        
+    def parse_gathering(self, code, logitem):
+        self.echo("othergathering " + logitem, 1)
+
+    def parse_othergathering(self, code, logitem):
+        self.echo("othergathering " + logitem, 1)
+
+    def parse_leve(self, code, logitem):
+        self.echo("leve " + logitem, 1)
+
+    def parse_chatmessage(self, code, logitem):
+        #tabkey = '02 2E 05 0F F2 07 6F 03'
+        self.echo("chatmessage " + code + logitem, 1)
+        if (code == '1B') or (code == '19'):
+            user = ' '.join(logitem.split(' ')[0:2])
+            message = logitem
+        else:
+            logitemparts = logitem.split(":")
+            user = logitemparts[0].strip()
+            message = unicode(":".join(logitemparts[1:]).strip())
+        try:
+            if message.find(self.autotranslateheader) != -1:
+                # found an auto translate
+                '''
+                if message.startswith("lang"):
+                    msgparts = message.split(" ")
+                    containsit = False
+                    for text, value in self.autotranslate.items():
+                        if message.find(text) != -1:
+                            containsit = True
+                            break
+                    if not containsit:
+                        #pass
+                        self.echo(ByteToHex(message), 0)
+                        self.echo("HexToByte('" + ByteToHex(msgparts[1]) + "'):" + "\"(" + " ".join(msgparts[2:]) + ")\",", 0)
+                '''
+                hasreplacement = False
+                for text, value in self.autotranslate.items():
+                    if message.find(unicode(text)) != -1:
+                        hasreplacement = True
+                        message = message.replace(text, value)
+                if not hasreplacement:
+                    # Save this up to the server so we can investigate later and add it.
+                    pass
+                self.echo("Message: " + message, 1)
+            #raw_input("tab")
+        except:
+            traceback.print_exc(file=sys.stdout)
+
+    def parse_npcchat(self, code, logitem):
+        self.echo("npc chat " + logitem, 1)
+
+    def parse_invalidcommand(self, code, logitem):
+        self.echo("invalid command " + logitem, 1)
+
+    def parse_monstereffect(self, code, logitem):
+        self.echo("other abilities " + logitem, 1)
+
+    def parse_othereffect(self, code, logitem):
+        if logitem.find("grants you") != -1:	
+            effect = logitem[logitem.find("effect of ") +10:-1]
+        self.echo("other abilities " + logitem, 1)
+
+    def parse_partyabilities(self, code, logitem):
+        if logitem.find("grants") != -1:
+            effect = logitem[logitem.find("effect of ") +10:-1]
+        if logitem.find("inflicts") != -1:
+            monsteraffliction = logitem[logitem.find("effect of ") +10:-1]
+        self.echo("other abilities " + logitem, 1)
+
+    def parse_otherabilities(self, code, logitem):
+        self.echo("other abilities " + logitem, 1)
+
+    def parse_readyability(self, code, logitem):
+        self.echo("ready ability " + logitem, 1)
+
+    def parse_servermessage(self, code, logitem):
+        self.echo("server message " + logitem, 1)
+
+    def parse_invoke(self, code, logitem):
+        self.echo("invoke " + logitem, 1)
+
+    def parse_inflicts(self, code, logitem):
+        if logitem.find("inflicts you") != -1:
+            affliction = logitem[logitem.find("effect of ") +10:-1]
+            return
+        if logitem.find("inflicts") != -1:
+            othersaffliction = logitem[logitem.find("effect of ") +10:-1]            
+        self.echo("inflicts " + logitem, 1)
+
+    def parse_effect(self, code, logitem):
+        self.echo("effect " + logitem, 1)
+
+    def parse_otherrecover(self, code, logitem):
+        if logitem.find("recovers") != -1:	
+            othershealing = logitem[logitem.find("recovers ") +9:logitem.find(" HP")]
+        self.echo("otherrecover " + logitem, 1)
+
+    def parse_recover(self, code, logitem):
+        if logitem.find("You recover") != -1:
+            healing = logitem[logitem.find("recover ") +8:logitem.find(" HP")]
+        
+        self.echo("recover " + logitem, 1)
+
+    def parse_absorb(self, code, logitem):
+        if logitem.find("You absorb") != -1:
+            healing = logitem[logitem.find("absorb ") +7:logitem.find(" HP")]
+        
+        self.echo("absorb " + logitem, 1)
+
+    def parse_monstermiss(self, code, logitem):
+        self.echo("monstermiss " + logitem, 1)
+
+    def parse_othermiss(self, code, logitem):
+        if logitem.find("KO'd target") != -1 or logitem.find("too far away") != -1 or logitem.find("guard fails.") != -1 or logitem.find("fails to take effect.") != -1:
+            return
+        if logitem.find("evades") != -1:
+            monster = logitem[logitem.find("The ") + 4:logitem.find(" evades")]
+            if monster == self.currentmonster["monster"]:
+                misschar = logitem[logitem.find("evades") + 7:logitem.find("'s ")]
+                attacktype = logitem[logitem.find("'s ") + 3:logitem.find(".")]
+                self.currentmonster["othermiss"].append([misschar, attacktype])
+        else:
+            if logitem.find("from the") != -1:
+                monster = logitem[logitem.find("the ") +4:logitem.find(" from the")].split('\'')[0]
+            else:
+                monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
+            if monster == self.currentmonster["monster"]:
+                misschar = logitem[: logitem.find("'s ")]
+                attacktype = logitem[logitem.find("'s ") + 3:logitem.find(" misses")]
+                self.currentmonster["othermiss"].append([misschar, attacktype])
+
+        self.echo("othermiss " + logitem, 1)
+
+    def parse_miss(self, code, logitem):
+        monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
+        if monster == self.currentmonster["monster"]:
+            self.currentmonster["miss"] += 1
+        self.echo("miss " + logitem, 1)
+
+    def parse_otherhitdamage(self, code, logitem):
+        if logitem.find("hits ") != -1:
+            if logitem.find("points") == -1:
+                return
+            monsterhit = logitem[logitem.find("The ") +4:logitem.find(" hits")]
+            monster = monsterhit.split('\'')[0]
+            attacktype = monsterhit[monsterhit.find("'s ")+3:]
+            if monster == self.currentmonster["monster"]:
+                if logitem.find("Critical!") != -1:
+                    critical = 1
+                else:
+                    critical = 0
+                if logitem.find(" points") != -1:
+                    if logitem.find("from the") != -1:
+                        hitchar = logitem[logitem.find("hits ") + 5:logitem.find(" from")]
+                    else:
+                        hitchar = logitem[logitem.find("hits ") + 5:logitem.find(" for")]
+                    hitdamage = logitem[logitem.find("for ") +4:logitem.find(" points")]
+                    self.currentmonster["otherhitdamage"].append([hitdamage, critical, attacktype, hitchar])
+        self.echo("otherhitdamage " + logitem, 1)
+
+    def parse_otherdamage(self, code, logitem):
+        if logitem.find("from the ") != -1:
+            monster = logitem[logitem.find("the ") +4:logitem.find(" from the")]
+        else:
+            monster = logitem[logitem.find("the ") +4:logitem.find(" for")]
+        if monster == self.currentmonster["monster"]:						
+            if logitem.find("Critical!") != -1:
+                critical = 1
+            else:
+                critical = 0
+            attackchar = ""
+            if critical:
+                attackchar = logitem[10: logitem.find("'s ")]
+            else:
+                attackchar = logitem[: logitem.find("'s ")]
+            attacktype = logitem[logitem.find("'s ") +3:logitem.find(" hits")]
+            if logitem.find(" points") != -1:
+                damage = logitem[logitem.find("for ") +4:logitem.find(" points")]
+                self.currentmonster["otherdamage"].append([damage, critical, attacktype, attackchar])
+        self.echo("otherdamage " + logitem, 1)
+
+    def parse_hitdamage(self, code, logitem):
+        if logitem.find("hits you") != -1:
+            if logitem.find("points") == -1:
+                return
+            monsterhit = logitem[logitem.find("The ") +4:logitem.find(" hits")]
+            monster = monsterhit.split('\'')[0]
+            attacktype = monsterhit[monsterhit.find("'s ")+3:]
+            if monster == self.currentmonster["monster"]:
+                hitdamage = logitem[logitem.find("for ") +4:logitem.find(" points")]
+                if logitem.find("Critical!") != -1:
+                    critical = 1
+                else:
+                    critical = 0
+                self.currentmonster["hitdamage"].append([hitdamage, critical, attacktype])
+        self.echo("hitdamage " + logitem, 1)
+
+    def parse_damagedealt(self, code, logitem):
+        if logitem.find("your") != -1 or logitem.find("Your") != -1:
+            if logitem.find("from the ") != -1:
+                monster = logitem[logitem.find("the ") +4:logitem.find(" from the")]
+            else:
+                monster = logitem[logitem.find("the ") +4:logitem.find(" for")]
+            if monster == self.currentmonster["monster"]:						
+                if logitem.find("Critical!") != -1:
+                    critical = 1
+                else:
+                    critical = 0
+                attacktype = logitem[logitem.find("Your ") +5:logitem.find(" hits")]
+                if logitem.find(" points") != -1:
+                    damage = logitem[logitem.find("for ") +4:logitem.find(" points")]
+                    self.currentmonster["damage"].append([damage, critical, attacktype])
+        self.echo("damagedealt " + logitem, 1)
+
+    def parse_craftingsuccess(self, code, logitem):
+        #print logitem
+        # Crafting success
+        if logitem.find("You create") != -1:
+            if logitem.find(" of ") != -1:
+                self.currentcrafting["item"] = logitem[logitem.find(" of ")+4:-1]
+            else:
+                self.currentcrafting["item"] = logitem[logitem.find(" a ")+3:-1]
+            self.currentcrafting["success"] = 1
+        # botched it
+        if logitem.find("botch") != -1:
+            self.currentcrafting["success"] = 0
+        self.craftingcomplete = 1
+        
+        self.echo("crafting success " + logitem, 1)
+
+    def parse_defeated(self, code, logitem):
+        if self.craftingcomplete == 1:
+            printCrafting(self.currentcrafting)
+            self.currentcrafting = copy.deepcopy(self.defaultcrafting)
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.craftingcomplete = 0
+        if logitem.find("group") != -1:
+            return
+        if logitem.find("defeats you") != -1:
+            # You were killed...
+            self.characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime)), "class":self.currentmonster["class"]})
+            #0045::The fat dodo defeats you.
+            return
+        if logitem.find("defeat") != -1:
+            monster = logitem[logitem.find("The ") +4:logitem.find(" is defeat")].split('\'')[0]
+            if monster != self.currentmonster["monster"]:
+                return
+            self.defeated = True
+
+        self.echo("defeated " + logitem, 1)
+
+    def parse_spexpgain(self, code, logitem):
+        pos = logitem.find("You gain")
+        if pos > -1:
+            points = ""
+            skill = ""
+            if logitem.find("experience") != -1:
+                points = logitem[9:logitem.find("experience") -1]
+                #exptotal += int(points)
+                self.currentmonster["exp"] = int(points)
+                self.currentcrafting["exp"] = int(points)
+                self.expset = True
+            elif logitem.find("skill") != -1:
+                logitemparts = logitem.split(" ")
+                self.currentmonster["skillpoints"] = int(logitemparts[2])
+                self.currentmonster["class"] = logitemparts[3]
+                self.currentcrafting["skillpoints"] = int(logitemparts[2])
+                self.currentcrafting["class"] = logitemparts[3]
+                self.spset = True
+        if self.expset and self.spset and self.defeated:
+            self.engaged(code, logitem)
+        self.echo("spexpgain " + logitem, 1)
+
+    def parse_genericmessage(self, code, logitem):
+        if logitem.find("engaged") != -1:
+            self.engaged(logitem)
+        elif logitem.find("You use") != -1:
+            self.useitem(logitem)
+        elif logitem.find("Progress") != -1:
+            # save progress as array of % and it was an increase or decrease
+            if logitem.find("increases") != -1:
+                self.progress = [logitem[logitem.find("by ") +3:-2], 1]
+            else:
+                self.progress = [logitem[logitem.find("by ") +3:-2], 0]
+        elif logitem.find("Durability") != -1:
+            if logitem.find("increases") != -1:
+                self.durability = [logitem[logitem.find("by ") +3:-1], 1]
+            else:
+                self.durability = [logitem[logitem.find("by ") +3:-1], 0]
+        elif logitem.find("Quality") != -1:
+            if logitem.find("increases") != -1:
+                self.quality = [logitem[logitem.find("by ") +3:-1], 1]
+            else:
+                self.quality = [logitem[logitem.find("by ") +3:-1], 0]
+        else:
+            pass        
+            
+        self.echo("generic " + logitem, 1)
+
+class japanese_parser(ffxiv_parser):
+    
+    def __init__(self): 
+        ffxiv_parser.__init__(self, "jp")
+        self.craftingcomplete = 0
+        self.autotranslateheader = HexToByte('02 2E')
+        #TODO: Move this to a bin file later to avoid the hextobyte and crap in the source.
+        self.autotranslate = {        
+            HexToByte('02 2E 03 01 66 03'):"(Please use the auto-translate function.)",
+            HexToByte('02 2E 03 01 67 03'):"(Japanese)",
+            HexToByte('02 2E 03 01 68 03'):"(English)",
+            HexToByte('02 2E 03 01 69 03'):"(French)",
+            HexToByte('02 2E 03 01 6A 03'):"(German)",
+            HexToByte('02 2E 03 01 6B 03'):"(Can you speak Japanese?)",
+            HexToByte('02 2E 03 01 6C 03'):"(Can you speak English?)",
+            HexToByte('02 2E 03 01 6D 03'):"(Can you speak French?)",
+            HexToByte('02 2E 03 01 6E 03'):"(Can you speak German?)",
+            HexToByte('02 2E 03 01 6F 03'):"(I don't speak any English.)",
+            HexToByte('02 2E 03 01 70 03'):"(I don't speak any Japanese.)",
+            HexToByte('02 2E 03 01 71 03'):"(I don't speak any French.)",
+            HexToByte('02 2E 03 01 72 03'):"(I don't speak any German.)",
+            HexToByte('02 2E 03 01 73 03'):"(Please listen.)",
+            HexToByte('02 2E 03 01 74 03'):"(Can you hear me?)",
+            HexToByte('02 2E 03 01 75 03'):"(I can speak a little.)",
+            HexToByte('02 2E 03 01 76 03'):"(I can understand a little.)",
+            HexToByte('02 2E 03 01 77 03'):"(Please use simple words.)",
+            HexToByte('02 2E 03 01 78 03'):"(Please do not abbreviate your words.)",
+            HexToByte('02 2E 03 01 79 03'):"(I need some time to put together my answer.)",
+            HexToByte('02 2E 03 02 CA 03'):"(Nice to meet you.)",
+            HexToByte('02 2E 03 02 CB 03'):"(Good morning!)",
+            HexToByte('02 2E 03 02 CC 03'):"(Hello!)",
+            HexToByte('02 2E 03 02 CD 03'):"(Good evening!)",
+            HexToByte('02 2E 03 02 CE 03'):"(Good night!)",
+            HexToByte('02 2E 03 02 CF 03'):"(Goodbye.)",
+            HexToByte('02 2E 04 02 F0 CF 03'):"(I had fun today!)",
+            HexToByte('02 2E 04 02 F0 D0 03'):"(See you again!)",
+            HexToByte('02 2E 04 02 F0 D1 03'):"(Let's play together again sometime!)",
+            HexToByte('02 2E 04 02 F0 D2 03'):"(I'm back!)",
+            HexToByte('02 2E 04 02 F0 D3 03'):"(Welcome back.)",
+            HexToByte('02 2E 04 02 F0 D4 03'):"(Congratulations!)",
+            HexToByte('02 2E 04 02 F0 D5 03'):"(Good job!)",
+            HexToByte('02 2E 04 02 F0 D6 03'):"(Good luck!)",
+            HexToByte('02 2E 04 02 F0 D7 03'):"(All right!)",
+            HexToByte('02 2E 04 02 F0 D8 03'):"(Thank you.)",
+            HexToByte('02 2E 04 02 F0 D9 03'):"(You're welcome.)",
+            HexToByte('02 2E 04 02 F0 DA 03'):"(Take care.)",
+            HexToByte('02 2E 04 02 F0 DB 03'):"(I'm sorry.)",
+            HexToByte('02 2E 04 02 F0 DC 03'):"(Please forgive me.)",
+            HexToByte('02 2E 04 02 F0 DD 03'):"(That's too bad.)",
+            HexToByte('02 2E 04 02 F0 DE 03'):"(Excuse me...)",
+            HexToByte('02 2E 05 03 F2 01 2D 03'):"(Who?)",
+            HexToByte('02 2E 05 03 F2 01 2E 03'):"(Which?)",
+            HexToByte('02 2E 05 03 F2 01 2F 03'):"(How?)",
+            HexToByte('02 2E 05 03 F2 01 30 03'):"(What?)",
+            HexToByte('02 2E 05 03 F2 01 31 03'):"(When?)",
+            HexToByte('02 2E 05 03 F2 01 32 03'):"(How many?)",
+            HexToByte('02 2E 05 03 F2 01 33 03'):"(Where?)",
+            HexToByte('02 2E 05 03 F2 01 34 03'):"(Where shall we go?)",
+            HexToByte('02 2E 05 03 F2 01 35 03'):"(Which guildleve shall we do?)",
+            HexToByte('02 2E 05 03 F2 01 37 03'):"(Do you have it?)",
+            HexToByte('02 2E 05 03 F2 01 38 03'):"(What weapons can you use?)",
+            HexToByte('02 2E 05 03 F2 01 39 03'):"(What guildleves do you have?)",
+            HexToByte('02 2E 05 03 F2 01 3B 03'):"(Can you do it?)",
+            HexToByte('02 2E 05 03 F2 01 3C 03'):"(What other classes can you use?)",
+            HexToByte('02 2E 05 03 F2 01 3D 03'):"(Do you have it set?)",
+            HexToByte('02 2E 05 03 F2 01 3E 03'):"(What's the battle plan?)",
+            HexToByte('02 2E 05 03 F2 01 3F 03'):"(What's the Battle Regimen order?)",
+            HexToByte('02 2E 05 03 F2 01 40 03'):"(Can I add you to my friend list?)",
+            HexToByte('02 2E 05 03 F2 01 41 03'):"(Shall we take a break?)",
+            HexToByte('02 2E 05 03 F2 01 42 03'):"(Do you want me to repair it?)",
+            HexToByte('02 2E 05 03 F2 01 43 03'):"(Do you need any help?)",
+            HexToByte('02 2E 05 04 F2 01 91 03'):"(I don't understand.)",
+            HexToByte('02 2E 05 04 F2 01 92 03'):"(No thanks.)",
+            HexToByte('02 2E 05 04 F2 01 93 03'):"(Yes, please.)",
+            HexToByte('02 2E 05 04 F2 01 94 03'):"(If you would be so kind.)",
+            HexToByte('02 2E 05 04 F2 01 95 03'):"(Understood.)",
+            HexToByte('02 2E 05 04 F2 01 96 03'):"(I'm sorry. I'm busy now.)",
+            HexToByte('02 2E 05 04 F2 01 97 03'):"(I'm playing solo right now.)",
+            HexToByte('02 2E 05 04 F2 01 98 03'):"(I don't know how ot answer that question.)",
+            HexToByte('02 2E 05 04 F2 01 99 03'):"(I see.)",
+            HexToByte('02 2E 05 04 F2 01 9A 03'):"(Thanks for the offer, but I'll have to pass.)",
+            HexToByte('02 2E 05 04 F2 01 9B 03'):"(That's interesting.)",
+            HexToByte('02 2E 05 04 F2 01 9C 03'):"(Um...)",
+            HexToByte('02 2E 05 04 F2 01 9D 03'):"(Huh!?)",
+            HexToByte('02 2E 05 04 F2 01 9E 03'):"(Really?)",
+            HexToByte('02 2E 05 04 F2 01 9F 03'):"(Hmmm.)",
+            HexToByte('02 2E 05 04 F2 01 A0 03'):"(I have to go soon.)",  
+            HexToByte('02 2E 05 05 F2 01 F5 03'):"(Casting spell.)",
+            HexToByte('02 2E 05 05 F2 01 F6 03'):"(Time for work!)",
+            HexToByte('02 2E 05 05 F2 01 F7 03'):"(I have plans.)",
+            HexToByte('02 2E 05 05 F2 01 F8 03'):"(I'm sleepy.)",
+            HexToByte('02 2E 05 05 F2 01 F9 03'):"(I'm tired.)",
+            HexToByte('02 2E 05 05 F2 01 FA 03'):"(Have stuff to do, gotta go!)",
+            HexToByte('02 2E 05 05 F2 01 FB 03'):"(I don't feel well.)",
+            HexToByte('02 2E 05 05 F2 01 FC 03'):"(I'm not up for it.)",
+            HexToByte('02 2E 05 05 F2 01 FD 03'):"(I'm interested.)",
+            HexToByte('02 2E 05 05 F2 01 FE 03'):"(Fighting right now!)",
+            HexToByte('02 2E 05 05 F2 01 FF 03'):"(I want to make money.)",
+            HexToByte('02 2E 04 05 F1 02 03'):"(I don't remember.)",
+            HexToByte('02 2E 05 05 F2 02 01 03'):"(I don't know.)",
+            HexToByte('02 2E 05 05 F2 02 02 03'):"(Just used it.)",
+            HexToByte('02 2E 05 05 F2 02 03 03'):"(I want experience points.)",
+            HexToByte('02 2E 05 05 F2 02 04 03'):"(I want skill points.)",
+            HexToByte('02 2E 05 06 F2 02 59 03'):"(Can I have it?)",
+            HexToByte('02 2E 05 06 F2 02 5A 03'):"(Can you do it for me?)",
+            HexToByte('02 2E 05 06 F2 02 5B 03'):"(Lower the price?)",
+            HexToByte('02 2E 05 06 F2 02 5C 03'):"(Buy?)",
+            HexToByte('02 2E 05 06 F2 02 5D 03'):"(Sell?)",
+            HexToByte('02 2E 05 06 F2 02 5E 03'):"(Trade?)",
+            HexToByte('02 2E 05 06 F2 02 5F 03'):"(Do you need it?)",
+            HexToByte('02 2E 05 06 F2 02 60 03'):"(Can you make it?)",
+            HexToByte('02 2E 05 06 F2 02 61 03'):"(Do you have it?)",
+            HexToByte('02 2E 05 06 F2 02 62 03'):"(Can you repair it?)",
+            HexToByte('02 2E 05 06 F2 02 63 03'):"(What materials are needed?)",
+            HexToByte('02 2E 05 06 F2 02 64 03'):"(No money!)",
+            HexToByte('02 2E 05 06 F2 02 65 03'):"(I don't have anything to give you.)",
+            HexToByte('02 2E 05 06 F2 02 66 03'):"(You can have this.)",
+            HexToByte('02 2E 05 06 F2 02 67 03'):"(Please.)",
+            HexToByte('02 2E 05 06 F2 02 68 03'):"(Reward:)",
+            HexToByte('02 2E 05 06 F2 02 69 03'):"(Price:)", 
+            HexToByte('02 2E 05 07 F2 02 BD 03'):"(Looking for members.)",
+            HexToByte('02 2E 05 07 F2 02 BE 03'):"(Gather together.)",
+            HexToByte('02 2E 05 07 F2 02 BF 03'):"(Team up?)",
+            HexToByte('02 2E 05 07 F2 02 C0 03'):"(Are you alone?)",
+            HexToByte('02 2E 05 07 F2 02 C1 03'):"(Any vacancies?)",
+            HexToByte('02 2E 05 07 F2 02 C2 03'):"(Please invite me.)",
+            HexToByte('02 2E 05 07 F2 02 C3 03'):"(Please let me join.)",
+            HexToByte('02 2E 05 07 F2 02 C4 03'):"(Who is the leader?)",
+            HexToByte('02 2E 05 07 F2 02 C5 03'):"(Just for a short time is fine.)",
+            HexToByte('02 2E 05 07 F2 02 C6 03'):"(Our party's full.)",
+            HexToByte('02 2E 05 07 F2 02 C7 03'):"(Please assist.)",
+            HexToByte('02 2E 05 07 F2 02 C8 03'):"(Disbanding party.)",
+            HexToByte('02 2E 05 07 F2 02 C9 03'):"(Taking a break.)",
+            HexToByte('02 2E 05 07 F2 02 CA 03'):"(It's better if physical levels aren't too far apart.)",
+            HexToByte('02 2E 05 07 F2 02 CB 03'):"(It's better if skill levels aren't too far apart.)",
+            HexToByte('02 2E 05 08 F2 03 21 03'):"(Please follow.)",
+            HexToByte('02 2E 05 08 F2 03 22 03'):"(I'll follow you.)",
+            HexToByte('02 2E 05 08 F2 03 23 03'):"(Please check it.)",
+            HexToByte('02 2E 05 08 F2 03 24 03'):"(Found it!)",
+            HexToByte('02 2E 05 08 F2 03 25 03'):"(Full attack!)",
+            HexToByte('02 2E 05 08 F2 03 26 03'):"(Pull back.)",
+            HexToByte('02 2E 05 08 F2 03 27 03'):"(Watch out for enemies.)",
+            HexToByte('02 2E 05 08 F2 03 28 03'):"(Defeat this one first!)",
+            HexToByte('02 2E 05 08 F2 03 29 03'):"(Please don't attack.)",
+            HexToByte('02 2E 05 08 F2 03 2A 03'):"(Please deactivate it.)",
+            HexToByte('02 2E 05 08 F2 03 2B 03'):"(Heal!)",
+            HexToByte('02 2E 05 08 F2 03 2C 03'):"(Run away!)",
+            HexToByte('02 2E 05 08 F2 03 2D 03'):"(Help me out!)",
+            HexToByte('02 2E 05 08 F2 03 2E 03'):"(Stop!)",
+            HexToByte('02 2E 05 08 F2 03 2F 03'):"(Standing by.)",
+            HexToByte('02 2E 05 08 F2 03 30 03'):"(None left.)",
+            HexToByte('02 2E 05 08 F2 03 31 03'):"(Don't have it.)",
+            HexToByte('02 2E 05 08 F2 03 32 03'):"(Please use it sparingly.)",
+            HexToByte('02 2E 05 08 F2 03 33 03'):"(I'll use it sparingly.)",
+            HexToByte('02 2E 05 08 F2 03 34 03'):"(I'm weakened.)",
+            HexToByte('02 2E 05 08 F2 03 35 03'):"(My gear is in poor condition.)",
+            HexToByte('02 2E 05 08 F2 03 36 03'):"(Ready!)",
+            HexToByte('02 2E 05 08 F2 03 37 03'):"(Making a Battle Regimen.)",
+            HexToByte('02 2E 05 08 F2 03 38 03'):"(Starting the Battle Regimen.)",
+            HexToByte('02 2E 05 08 F2 03 39 03'):"(Please set enemy marks.)",
+            HexToByte('02 2E 05 08 F2 03 3A 03'):"(Please set an ally mark.)",
+            HexToByte('02 2E 05 08 F2 03 3B 03'):"(Please use it.)",
+            HexToByte('02 2E 05 08 F2 03 3C 03'):"(Let's rest for a while.)",
+            HexToByte('02 2E 05 08 F2 03 3D 03'):"(Front line job)",
+            HexToByte('02 2E 05 08 F2 03 3E 03'):"(Support role job)",
+            HexToByte('02 2E 05 08 F2 03 3F 03'):"(Back line job)",
+            HexToByte('02 2E 05 08 F2 03 40 03'):"(Weakness)",
+            HexToByte('02 2E 05 08 F2 03 41 03'):"(Warning)",
+            HexToByte('02 2E 05 08 F2 03 42 03'):"(Recommend)",
+            HexToByte('02 2E 05 08 F2 03 43 03'):"(Kill Order)",
+            HexToByte('02 2E 05 09 F2 03 85 03'):"(Guildleve)",
+            HexToByte('02 2E 05 09 F2 03 87 03'):"(Quest)",
+            HexToByte('02 2E 05 09 F2 03 88 03'):"(Client)",
+            HexToByte('02 2E 05 09 F2 03 89 03'):"(Instance)",
+            HexToByte('02 2E 05 09 F2 03 8A 03'):"(Gil)",
+            HexToByte('02 2E 05 09 F2 03 8B 03'):"(Skill)",
+            HexToByte('02 2E 05 09 F2 03 8C 03'):"(Primary Skill)",
+            HexToByte('02 2E 05 09 F2 03 8D 03'):"(Primary Skill Rank)",
+            HexToByte('02 2E 05 09 F2 03 8E 03'):"(Physical Level)",
+            HexToByte('02 2E 05 09 F2 03 8F 03'):"(Skill Point)",
+            HexToByte('02 2E 05 09 F2 03 90 03'):"(Experience Points)",
+            HexToByte('02 2E 05 09 F2 03 91 03'):"(Affinity)",
+            HexToByte('02 2E 05 09 F2 03 92 03'):"(Attribute)",
+            HexToByte('02 2E 05 09 F2 03 93 03'):"(Elemental Resistance)",
+            HexToByte('02 2E 05 09 F2 03 94 03'):"(Fire)",
+            HexToByte('02 2E 05 09 F2 03 95 03'):"(Ice)",
+            HexToByte('02 2E 05 09 F2 03 96 03'):"(Wind)",
+            HexToByte('02 2E 05 09 F2 03 97 03'):"(Earth)",
+            HexToByte('02 2E 05 09 F2 03 98 03'):"(Lightning)",
+            HexToByte('02 2E 05 09 F2 03 99 03'):"(Water)",
+            HexToByte('02 2E 05 09 F2 03 9A 03'):"(Astral)",
+            HexToByte('02 2E 05 09 F2 03 9B 03'):"(Umbral)",
+            HexToByte('02 2E 05 09 F2 03 9C 03'):"(Guardian)",
+            HexToByte('02 2E 05 09 F2 03 9D 03'):"(Nameday)",
+            HexToByte('02 2E 05 09 F2 03 9E 03'):"(Race)",
+            HexToByte('02 2E 05 09 F2 03 9F 03'):"(Clan)",
+            HexToByte('02 2E 05 09 F2 03 A0 03'):"(Gender)",
+            HexToByte('02 2E 05 09 F2 03 A1 03'):"(Title)",
+            HexToByte('02 2E 05 09 F2 03 A2 03'):"(Quality)",
+            HexToByte('02 2E 05 09 F2 03 A3 03'):"(☆☆☆)",
+            HexToByte('02 2E 05 09 F2 03 A4 03'):"(☆☆)",
+            HexToByte('02 2E 05 09 F2 03 A5 03'):"(☆)",
+            HexToByte('02 2E 05 09 F2 03 A6 03'):"(Durability)",
+            HexToByte('02 2E 05 09 F2 03 AC 03'):"(To Repair)",
+            HexToByte('02 2E 05 09 F2 03 AD 03'):"(Status Effect)",
+            HexToByte('02 2E 05 09 F2 03 AE 03'):"(Cast Time)",
+            HexToByte('02 2E 05 09 F2 03 AF 03'):"(Recast Time)",
+            HexToByte('02 2E 05 09 F2 03 B0 03'):"(KO'd)",
+            HexToByte('02 2E 05 09 F2 03 B1 03'):"(Craft)",
+            HexToByte('02 2E 05 09 F2 03 B2 03'):"(Gathering)",
+            HexToByte('02 2E 05 09 F2 03 B3 03'):"(Negotiate)",
+            HexToByte('02 2E 05 09 F2 03 B4 03'):"(Guild Mark)",
+            HexToByte('02 2E 05 09 F2 03 B5 03'):"(Mark)",
+            HexToByte('02 2E 05 09 F2 03 B6 03'):"(Linkshell)",
+            HexToByte('02 2E 05 09 F2 03 B7 03'):"(Linkpearl)",
+            HexToByte('02 2E 05 09 F2 03 B8 03'):"(Active Mode)",
+            HexToByte('02 2E 05 09 F2 03 B9 03'):"(Passive Mode)",
+            HexToByte('02 2E 05 09 F2 03 BA 03'):"(Action)",
+            HexToByte('02 2E 05 09 F2 03 BB 03'):"(Magic)",
+            HexToByte('02 2E 05 09 F2 03 BC 03'):"(Weaponskill)",
+            HexToByte('02 2E 05 09 F2 03 BD 03'):"(Ability)",
+            HexToByte('02 2E 05 09 F2 03 BE 03'):"(Trait)",
+            HexToByte('02 2E 05 09 F2 03 BF 03'):"(Gathering Actions)",
+            HexToByte('02 2E 05 09 F2 03 C0 03'):"(Synthesis Actions)",
+            HexToByte('02 2E 05 09 F2 03 C1 03'):"(Engage)",
+            HexToByte('02 2E 05 09 F2 03 C2 03'):"(Disengage)",
+            HexToByte('02 2E 05 09 F2 03 C3 03'):"(Incapacitated)",
+            HexToByte('02 2E 05 09 F2 03 C4 03'):"(Battle Regimen)",
+            HexToByte('02 2E 05 09 F2 03 C5 03'):"(Enmity)",
+            HexToByte('02 2E 05 09 F2 03 C6 03'):"(Loot)",
+            HexToByte('02 2E 05 09 F2 03 C7 03'):"(Enemy Sign)",
+            HexToByte('02 2E 05 09 F2 03 C8 03'):"(Ally Sign)",
+            HexToByte('02 2E 05 09 F2 03 C9 03'):"(Target)",            
+            HexToByte('02 2E 05 09 F2 03 CA 03'):"((Gear) Affinity)",
+            HexToByte('02 2E 05 09 F2 03 CB 03'):"(Rare)",
+            HexToByte('02 2E 05 09 F2 03 CC 03'):"(Unique)",
+            HexToByte('02 2E 05 09 F2 03 CD 03'):"(Party)",
+            HexToByte('02 2E 05 09 F2 03 CE 03'):"(Map)",
+            HexToByte('02 2E 05 09 F2 03 CF 03'):"(Log out)",
+            HexToByte('02 2E 05 09 F2 03 D0 03'):"(Indent)",
+            HexToByte('02 2E 05 09 F2 03 D1 03'):"(Pattern)",
+            HexToByte('02 2E 05 09 F2 03 D2 03'):"(Retainer)",
+            HexToByte('02 2E 05 09 F2 03 D3 03'):"(Chocobo)",
+            HexToByte('02 2E 05 09 F2 03 D4 03'):"(Aetheryte)",
+            HexToByte('02 2E 05 09 F2 03 D5 03'):"(Aetherial Gate)",
+            HexToByte('02 2E 05 09 F2 03 D6 03'):"(Aetherial Node)",
+            HexToByte('02 2E 05 09 F2 03 D7 03'):"(Trade)",
+            HexToByte('02 2E 05 09 F2 03 D8 03'):"(Bazaar)",
+            HexToByte('02 2E 05 09 F2 03 D9 03'):"(Repair)",
+            HexToByte('02 2E 05 09 F2 03 DA 03'):"(Auto-translation Dictionary)",
+            HexToByte('02 2E 05 09 F2 03 DB 03'):"(Teleport)",            
+            HexToByte('02 2E 05 09 F2 03 DC 03'):"(Warp)",
+            HexToByte('02 2E 05 09 F2 03 DD 03'):"(Guild Shop)",
+            HexToByte('02 2E 05 09 F2 03 DE 03'):"(Hyur)",
+            HexToByte('02 2E 05 09 F2 03 DF 03'):"(Elezen)",
+            HexToByte('02 2E 05 09 F2 03 E0 03'):"(Lalafell)",
+            HexToByte('02 2E 05 09 F2 03 E1 03'):"(Miqo'te)",
+            HexToByte('02 2E 05 09 F2 03 E2 03'):"(Roegadyn)",
+            HexToByte('02 2E 05 09 F2 03 E3 03'):"(Midlander)",
+            HexToByte('02 2E 05 09 F2 03 E4 03'):"(Highlander)",
+            HexToByte('02 2E 05 09 F2 03 E5 03'):"(Wildwood)",
+            HexToByte('02 2E 05 09 F2 03 E6 03'):"(Duskwight)",
+            HexToByte('02 2E 05 09 F2 03 E7 03'):"(Plainsfolk)",
+            HexToByte('02 2E 05 09 F2 03 E8 03'):"(Dunesfolk)",
+            HexToByte('02 2E 05 09 F2 03 E9 03'):"(Seeker of the Sun)",
+            HexToByte('02 2E 05 09 F2 03 EA 03'):"(Keeper of the Moon)",
+            HexToByte('02 2E 05 09 F2 03 EB 03'):"(Sea Wolf)",
+            HexToByte('02 2E 05 09 F2 03 EC 03'):"(Hellsguard)",
+            HexToByte('02 2E 05 09 F2 03 ED 03'):"(Diciples of War)",
+            HexToByte('02 2E 05 09 F2 03 EE 03'):"(Disciples of Magic)",
+            HexToByte('02 2E 05 09 F2 03 EF 03'):"(Disciples of the Land)",
+            HexToByte('02 2E 05 09 F2 03 F0 03'):"(Disciples of the Hand)",
+            HexToByte('02 2E 05 0A F2 04 B1 03'):"(/?)",
+            HexToByte('02 2E 05 0A F2 04 B2 03'):"(/action)",
+            HexToByte('02 2E 05 0A F2 04 B3 03'):"(/angry)",
+            HexToByte('02 2E 05 0A F2 04 B4 03'):"(/areaofeffect)",
+            HexToByte('02 2E 05 0A F2 04 B5 03'):"(/automove)",
+            HexToByte('02 2E 05 0A F2 04 B6 03'):"(/away)",
+            HexToByte('02 2E 05 0A F2 04 B7 03'):"(/battlemode)",
+            HexToByte('02 2E 05 0A F2 04 B8 03'):"(/battleregimen)",
+            HexToByte('02 2E 05 0A F2 04 B9 03'):"(/beckon)",
+            HexToByte('02 2E 05 0A F2 04 BA 03'):"(/blacklist)",
+            HexToByte('02 2E 05 0A F2 04 BB 03'):"(/blush)",
+            HexToByte('02 2E 05 0A F2 04 BC 03'):"(/bow)",
+            HexToByte('02 2E 05 0A F2 04 BE 03'):"(/chatmode)",
+            HexToByte('02 2E 05 0A F2 04 BF 03'):"(/check)",
+            HexToByte('02 2E 05 0A F2 04 C0 03'):"(/cheer)",
+            HexToByte('02 2E 05 0A F2 04 C1 03'):"(/chuckle)",
+            HexToByte('02 2E 05 0A F2 04 C2 03'):"(/clap)",
+            HexToByte('02 2E 05 0A F2 04 C3 03'):"(/clock)",
+            HexToByte('02 2E 05 0A F2 04 C4 03'):"(/comfort)",
+            HexToByte('02 2E 05 0A F2 04 C6 03'):"(/congratulate)",
+            HexToByte('02 2E 05 0A F2 04 C7 03'):"(/cry)",
+            HexToByte('02 2E 05 0A F2 04 C8 03'):"(/dance)",
+            HexToByte('02 2E 05 0A F2 04 C9 03'):"(/decline)",
+            HexToByte('02 2E 05 0A F2 04 CA 03'):"(/deny)",
+            HexToByte('02 2E 05 0A F2 04 CD 03'):"(/display)",
+            HexToByte('02 2E 05 0A F2 04 CB 03'):"(/doubt)",
+            HexToByte('02 2E 05 0A F2 04 CC 03'):"(/doze)",
+            HexToByte('02 2E 05 0A F2 04 CE 03'):"(/dusteffect)",
+            HexToByte('02 2E 05 0A F2 04 CF 03'):"(/echo)",
+            HexToByte('02 2E 05 0A F2 04 D0 03'):"(/emote)",
+            HexToByte('02 2E 05 0A F2 04 D1 03'):"(/equip)",
+            HexToByte('02 2E 05 0A F2 04 D2 03'):"(/equipaction)",
+            HexToByte('02 2E 05 0A F2 04 D3 03'):"(/examineself)",
+            HexToByte('02 2E 05 0A F2 04 D4 03'):"(/extendeddraw)",
+            HexToByte('02 2E 05 0A F2 04 D6 03'):"(/friendlist)",
+            HexToByte('02 2E 05 0A F2 04 D7 03'):"(/fume)",
+            HexToByte('02 2E 05 0A F2 04 D8 03'):"(/furious)",
+            HexToByte('02 2E 05 0A F2 04 D9 03'):"(/goodbye)",
+            HexToByte('02 2E 05 0A F2 04 DB 03'):"(/item)",
+            HexToByte('02 2E 05 0A F2 04 DC 03'):"(/join)",
+            HexToByte('02 2E 05 0A F2 04 DD 03'):"(/joy)",
+            HexToByte('02 2E 05 0A F2 04 DE 03'):"(/kneel)",
+            HexToByte('02 2E 05 0A F2 04 DF 03'):"(/laugh)",
+            HexToByte('02 2E 05 0A F2 04 E0 03'):"(/linkshell)",
+            HexToByte('02 2E 05 0A F2 04 E2 03'):"(/lockon)",
+            HexToByte('02 2E 05 0A F2 04 E3 03'):"(/logout)",
+            HexToByte('02 2E 05 0A F2 04 E4 03'):"(/lookout)",
+            HexToByte('02 2E 05 0A F2 04 E5 03'):"(/loot)",   
+            HexToByte('02 2E 05 0A F2 04 E7 03'):"(/map)",
+            HexToByte('02 2E 05 0A F2 04 E8 03'):"(/marking)",
+            HexToByte('02 2E 05 0A F2 04 E9 03'):"(/me)",
+            HexToByte('02 2E 05 0A F2 04 EA 03'):"(/meh)",
+            HexToByte('02 2E 05 0A F2 04 EB 03'):"(/names)",
+            HexToByte('02 2E 05 0A F2 04 EC 03'):"(/no)",
+            HexToByte('02 2E 05 0A F2 04 EE 03'):"(/panic)",
+            HexToByte('02 2E 05 0A F2 04 EF 03'):"(/party)",
+            HexToByte('02 2E 05 0A F2 04 F0 03'):"(/partycmd)",
+            HexToByte('02 2E 05 0A F2 04 F1 03'):"(/physics)",
+            HexToByte('02 2E 05 0A F2 04 F3 03'):"(/point)",
+            HexToByte('02 2E 05 0A F2 04 F4 03'):"(/poke)",
+            HexToByte('02 2E 05 0A F2 04 F5 03'):"(/profanity)",
+            HexToByte('02 2E 05 0A F2 04 F6 03'):"(/psych)",
+            HexToByte('02 2E 05 0A F2 04 F7 03'):"(/rally)",
+            HexToByte('02 2E 05 0A F2 04 F8 03'):"(/recast)",
+            HexToByte('02 2E 05 0A F2 04 F9 03'):"(/salute)",
+            HexToByte('02 2E 05 0A F2 04 FA 03'):"(/say)",
+            HexToByte('02 2E 05 0A F2 04 FB 03'):"(/scrollingbattletext)",
+            HexToByte('02 2E 05 0A F2 04 FD 03'):"(/shadow)",
+            HexToByte('02 2E 05 0A F2 04 FE 03'):"(/shocked)",
+            HexToByte('02 2E 05 0A F2 04 FF 03'):"(/shout)",
+            HexToByte('02 2E 04 0A F1 05 03'):"(/shrug)",
+            HexToByte('02 2E 05 0A F2 05 01 03'):"(/sit)",
+            HexToByte('02 2E 05 0A F2 05 02 03'):"(/soothe)",
+            HexToByte('02 2E 05 0A F2 05 03 03'):"(/stagger)",
+            HexToByte('02 2E 05 0A F2 05 04 03'):"(/stretch)",
+            HexToByte('02 2E 05 0A F2 05 05 03'):"(/sulk)",
+            HexToByte('02 2E 05 0A F2 05 06 03'):"(/supportdesk)",
+            HexToByte('02 2E 05 0A F2 05 07 03'):"(/surprised)",
+            HexToByte('02 2E 05 0A F2 05 09 03'):"(/targetnpc)",
+            HexToByte('02 2E 05 0A F2 05 0A 03'):"(/targetpc)",
+            HexToByte('02 2E 05 0A F2 05 0B 03'):"(/tell)",
+            HexToByte('02 2E 05 0A F2 05 15 03'):"(/textclear)",
+            HexToByte('02 2E 05 0A F2 05 0C 03'):"(/think)",            
+            HexToByte('02 2E 05 0A F2 05 0D 03'):"(/thumbsup)",
+            HexToByte('02 2E 05 0A F2 05 0E 03'):"(/upset)",
+            HexToByte('02 2E 05 0A F2 05 10 03'):"(/wait)",
+            HexToByte('02 2E 05 0A F2 05 11 03'):"(/wave)",
+            HexToByte('02 2E 05 0A F2 05 12 03'):"(/welcome)",
+            HexToByte('02 2E 05 0A F2 05 14 03'):"(/yes)",
+            HexToByte('02 2E 05 0B F2 05 DD 03'):"(North)",
+            HexToByte('02 2E 05 0B F2 05 DE 03'):"(South)",
+            HexToByte('02 2E 05 0B F2 05 DF 03'):"(East)",
+            HexToByte('02 2E 05 0B F2 05 E0 03'):"(West)",
+            HexToByte('02 2E 05 0B F2 05 E1 03'):"(Up)",
+            HexToByte('02 2E 05 0B F2 05 E2 03'):"(Down)",
+            HexToByte('02 2E 05 0B F2 05 E3 03'):"(Right)",
+            HexToByte('02 2E 05 0B F2 05 E4 03'):"(Left)",
+            HexToByte('02 2E 05 0B F2 05 E5 03'):"(Surface)",
+            HexToByte('02 2E 05 0B F2 05 E6 03'):"(Rear)",
+            HexToByte('02 2E 05 0B F2 05 E7 03'):"(Side)",
+            HexToByte('02 2E 05 0B F2 05 E8 03'):"(Front)",
+            HexToByte('02 2E 05 0B F2 05 E9 03'):"(Middle)",
+            HexToByte('02 2E 05 0B F2 05 EA 03'):"(Flank)",
+            HexToByte('02 2E 05 0B F2 05 EB 03'):"(Inside)",
+            HexToByte('02 2E 05 0B F2 05 EC 03'):"(Outside)",
+            HexToByte('02 2E 05 0B F2 05 ED 03'):"(This way)",
+            HexToByte('02 2E 05 0B F2 05 EE 03'):"(Over there)",
+            HexToByte('02 2E 05 0B F2 05 EF 03'):"(That way)",
+            HexToByte('02 2E 05 0C F2 06 41 03'):"(Day before yesterday)",
+            HexToByte('02 2E 05 0C F2 06 42 03'):"(Yesterday)",
+            HexToByte('02 2E 05 0C F2 06 43 03'):"(Today)",
+            HexToByte('02 2E 05 0C F2 06 44 03'):"(Tomorrow)",
+            HexToByte('02 2E 05 0C F2 06 45 03'):"(Day after tomorrow)",
+            HexToByte('02 2E 05 0C F2 06 46 03'):"(Last week)",
+            HexToByte('02 2E 05 0C F2 06 47 03'):"(This week)",
+            HexToByte('02 2E 05 0C F2 06 48 03'):"(Next week)",
+            HexToByte('02 2E 05 0C F2 06 49 03'):"(a.m.)",
+            HexToByte('02 2E 05 0C F2 06 4A 03'):"(p.m.)",
+            HexToByte('02 2E 05 0C F2 06 4B 03'):"(Morning)",
+            HexToByte('02 2E 05 0C F2 06 4C 03'):"(Afternoon)",
+            HexToByte('02 2E 05 0C F2 06 4D 03'):"(Night)",
+            HexToByte('02 2E 05 0C F2 06 4E 03'):"(Day of the week)",
+            HexToByte('02 2E 05 0C F2 06 4F 03'):"(Sunday)",
+            HexToByte('02 2E 05 0C F2 06 50 03'):"(Monday)",
+            HexToByte('02 2E 05 0C F2 06 51 03'):"(Tuesday)",
+            HexToByte('02 2E 05 0C F2 06 52 03'):"(Wednesday)",
+            HexToByte('02 2E 05 0C F2 06 53 03'):"(Thursday)",
+            HexToByte('02 2E 05 0C F2 06 54 03'):"(Friday)",
+            HexToByte('02 2E 05 0C F2 06 55 03'):"(Saturday)",
+            HexToByte('02 2E 05 0C F2 06 56 03'):"(Holiday)",
+            HexToByte('02 2E 05 0C F2 06 57 03'):"(Break)",
+            HexToByte('02 2E 05 0C F2 06 5A 03'):"(Second)",
+            HexToByte('02 2E 05 0C F2 06 58 03'):"(Long time)",
+            HexToByte('02 2E 05 0C F2 06 59 03'):"(Short time)",
+            HexToByte('02 2E 05 0C F2 06 5B 03'):"(Minute)",
+            HexToByte('02 2E 05 0C F2 06 5C 03'):"(Hour)",
+            HexToByte('02 2E 05 0C F2 06 5D 03'):"(Time remaining)",
+            HexToByte('02 2E 05 0C F2 06 5E 03'):"(January)",
+            HexToByte('02 2E 05 0C F2 06 5F 03'):"(February)",
+            HexToByte('02 2E 05 0C F2 06 60 03'):"(March (Month))",
+            HexToByte('02 2E 05 0C F2 06 61 03'):"(April)",
+            HexToByte('02 2E 05 0C F2 06 62 03'):"(May)",
+            HexToByte('02 2E 05 0C F2 06 63 03'):"(June)",
+            HexToByte('02 2E 05 0C F2 06 64 03'):"(July)",
+            HexToByte('02 2E 05 0C F2 06 65 03'):"(August)",
+            HexToByte('02 2E 05 0C F2 06 66 03'):"(September)",
+            HexToByte('02 2E 05 0C F2 06 67 03'):"(October)",
+            HexToByte('02 2E 05 0C F2 06 68 03'):"(November)",
+            HexToByte('02 2E 05 0C F2 06 69 03'):"(December)",
+            HexToByte('02 2E 05 0D F2 06 A5 03'):"(Connection Speed)",
+            HexToByte('02 2E 05 0D F2 06 A6 03'):"(Blacklist)",
+            HexToByte('02 2E 05 0D F2 06 A7 03'):"(Friend List)",
+            HexToByte('02 2E 05 0D F2 06 A8 03'):"(Config)",
+            HexToByte('02 2E 05 0D F2 06 A9 03'):"(Connection)",
+            HexToByte('02 2E 05 0D F2 06 AA 03'):"(Screenshot)",
+            HexToByte('02 2E 05 0D F2 06 AB 03'):"(Patch)",
+            HexToByte('02 2E 05 0D F2 06 AC 03'):"(Version)",
+            HexToByte('02 2E 05 0D F2 06 AD 03'):"(Connection Lost)",
+            HexToByte('02 2E 05 0D F2 06 AE 03'):"(Lag)",
+            HexToByte('02 2E 05 0D F2 06 AF 03'):"(Filter)",
+            HexToByte('02 2E 05 0D F2 06 B0 03'):"(Client)",
+            HexToByte('02 2E 05 0D F2 06 B1 03'):"(Backup)",
+            HexToByte('02 2E 05 0D F2 06 B3 03'):"(Save)",
+            HexToByte('02 2E 05 0D F2 06 B4 03'):"(TV)",
+            HexToByte('02 2E 05 0D F2 06 B5 03'):"(Modem)",
+            HexToByte('02 2E 05 0D F2 06 B6 03'):"(Monitor)",
+            HexToByte('02 2E 05 0D F2 06 B7 03'):"(Log off)",
+            HexToByte('02 2E 05 0D F2 06 B8 03'):"(Log on)",
+            HexToByte('02 2E 05 0D F2 06 B9 03'):"(Hard Disk)",
+            HexToByte('02 2E 05 0D F2 06 BA 03'):"(Server)",
+            HexToByte('02 2E 05 0D F2 06 BB 03'):"(Macro)",
+            HexToByte('02 2E 05 0E F2 07 09 03'):"(Online)",
+            HexToByte('02 2E 05 0E F2 07 0A 03'):"(Away)",
+            HexToByte('02 2E 05 0F F2 07 6D 03'):"(Numeric keypad)",
+            HexToByte('02 2E 05 0F F2 07 6E 03'):"(Arrow keys)",
+            HexToByte('02 2E 05 0F F2 07 6F 03'):"(Tab key)",
+            HexToByte('02 2E 05 0F F2 07 70 03'):"(Enter key)",
+            HexToByte('02 2E 05 0F F2 07 71 03'):"(End key)",
+            HexToByte('02 2E 05 0F F2 07 72 03'):"(Num Lock key)",
+            HexToByte('02 2E 05 0F F2 07 73 03'):"(Function keys)",
+            HexToByte('02 2E 05 0F F2 07 74 03'):"(Spacebar)",
+            HexToByte('02 2E 05 0F F2 07 75 03'):"(Backspace key)",
+            HexToByte('02 2E 05 0F F2 07 76 03'):"(Halfwidth/Fullwidth key)",
+            HexToByte('02 2E 05 0F F2 07 77 03'):"(Alt key)",
+            HexToByte('02 2E 05 0F F2 07 78 03'):"(Insert key)",
+            HexToByte('02 2E 05 0F F2 07 79 03'):"(Page Down key)",
+            HexToByte('02 2E 05 0F F2 07 7A 03'):"(Home key)",
+            HexToByte('02 2E 05 0F F2 07 7B 03'):"(Page Up key)",
+            HexToByte('02 2E 05 0F F2 07 7C 03'):"(Caps Lock key)",
+            HexToByte('02 2E 05 0F F2 07 7D 03'):"(Shift key)",
+            HexToByte('02 2E 05 0F F2 07 7E 03'):"(Esc key)",
+            HexToByte('02 2E 05 0F F2 07 7F 03'):"(Ctrl key)",
+            HexToByte('02 2E 05 0F F2 07 80 03'):"(Delete key)",            
+            HexToByte('02 2E 05 10 F2 07 D1 03'):"(notice)",
+            HexToByte('02 2E 05 10 F2 07 D2 03'):"(place)",
+            HexToByte('02 2E 05 10 F2 07 D3 03'):"(meat)",
+            HexToByte('02 2E 05 10 F2 07 D4 03'):"(train)",
+            HexToByte('02 2E 05 10 F2 07 D5 03'):"(last)",
+            HexToByte('02 2E 05 10 F2 07 D7 03'):"(question)",
+            HexToByte('02 2E 05 10 F2 07 D6 03'):"(death)",
+            HexToByte('02 2E 05 10 F2 07 D8 03'):"(joy)",
+            HexToByte('02 2E 05 10 F2 07 D9 03'):"(mistake)",
+            HexToByte('02 2E 05 10 F2 07 DA 03'):"(purpose)",
+            HexToByte('02 2E 05 10 F2 07 DB 03'):"(half)",
+            HexToByte('02 2E 05 10 F2 07 DC 03'):"(date)",
+            HexToByte('02 2E 05 10 F2 07 DD 03'):"(secret)",
+            HexToByte('02 2E 05 10 F2 07 DE 03'):"(position)",
+            HexToByte('02 2E 05 10 F2 07 DF 03'):"(lie)",
+            HexToByte('02 2E 05 10 F2 07 E0 03'):"(excitement)",
+            HexToByte('02 2E 05 10 F2 07 E1 03'):"(money)",
+            HexToByte('02 2E 05 10 F2 07 E2 03'):"(fear)",
+            HexToByte('02 2E 05 10 F2 07 E3 03'):"(friend)",
+            HexToByte('02 2E 05 10 F2 07 E4 03'):"(entrance)",
+            HexToByte('02 2E 05 10 F2 07 E5 03'):"(exit)",
+            HexToByte('02 2E 05 10 F2 07 E6 03'):"(mine)",
+            HexToByte('02 2E 05 10 F2 07 E7 03'):"(fun)",
+            HexToByte('02 2E 05 10 F2 07 E8 03'):"(I)",
+            HexToByte('02 2E 05 10 F2 07 E9 03'):"(you)",            
+            HexToByte('02 2E 03 11 02 03'):"(Halone, the Fury)",
+            HexToByte('02 2E 03 11 03 03'):"(Menphina, the Lover)",
+            HexToByte('02 2E 03 11 04 03'):"(Thaliak, the Scholar)",
+            HexToByte('02 2E 03 11 05 03'):"(Nymeia, the Spinner)",
+            HexToByte('02 2E 03 11 06 03'):"(Llymlaen, the Navigator)",
+            HexToByte('02 2E 03 11 07 03'):"(Oschon, the Wanderer)",
+            HexToByte('02 2E 03 11 08 03'):"(Byregot, the Builder)",
+            HexToByte('02 2E 03 11 09 03'):"(Rhalgr, the Destroyer)",
+            HexToByte('02 2E 03 11 0A 03'):"(Azeyma, the Warden)",
+            HexToByte('02 2E 03 11 0B 03'):"(Nald'thal, the Traders)",
+            HexToByte('02 2E 03 11 0C 03'):"(Nophica, the Matron)",
+            HexToByte('02 2E 03 11 0D 03'):"(Althyk, the Keeper)",
+            HexToByte('02 2E 03 12 02 03'):"(Main hand)",
+            HexToByte('02 2E 03 12 03 03'):"(Off Hand)",
+            HexToByte('02 2E 03 12 06 03'):"(Throwing Weapon)",
+            HexToByte('02 2E 03 12 07 03'):"(Pack)",
+            HexToByte('02 2E 03 12 08 03'):"(Pouch)",
+            HexToByte('02 2E 03 12 0A 03'):"(Head)",
+            HexToByte('02 2E 03 12 0B 03'):"(Undershirt)",
+            HexToByte('02 2E 03 12 0C 03'):"(Body)",
+            HexToByte('02 2E 03 12 0D 03'):"(Undergarment)",
+            HexToByte('02 2E 03 12 0E 03'):"(Legs)",
+            HexToByte('02 2E 03 12 0F 03'):"(Hands)",
+            HexToByte('02 2E 03 12 10 03'):"(Feet)",
+            HexToByte('02 2E 03 12 11 03'):"(Waist)",
+            HexToByte('02 2E 03 12 12 03'):"(Neck)",
+            HexToByte('02 2E 03 12 13 03'):"(Right Ear)",
+            HexToByte('02 2E 03 12 14 03'):"(Left Ear)",
+            HexToByte('02 2E 03 12 15 03'):"(Right Wrist)",
+            HexToByte('02 2E 03 12 16 03'):"(Left Wrist)",
+            HexToByte('02 2E 03 12 17 03'):"(Right Index Finger)",
+            HexToByte('02 2E 03 12 18 03'):"(Left Index Finger)",
+            HexToByte('02 2E 03 12 19 03'):"(Right Ring Finger)",
+            HexToByte('02 2E 03 12 20 03'):"(Left Right Finger)", # may be buggy
+            HexToByte('02 2E 03 12'):"(Left Right Finger)", # may be buggy
+            HexToByte('02 2E 03 13 03 03'):"(Hand-to-Hand)",
+            HexToByte('02 2E 03 13 04 03'):"(Sword)",
+            HexToByte('02 2E 03 13 05 03'):"(Axe)",
+            HexToByte('02 2E 03 13 08 03'):"(Archery)",
+            HexToByte('02 2E 03 13 09 03'):"(Polearm)",
+            HexToByte('02 2E 03 13 0B 03'):"(Shield)",
+            HexToByte('02 2E 03 13 17 03'):"(Thaumaturgy)",
+            HexToByte('02 2E 03 13 18 03'):"(Conjury)",
+            HexToByte('02 2E 03 13 1E 03'):"(Woodworking)",
+            HexToByte('02 2E 03 13 1F 03'):"(Smithing)",
+            HexToByte('02 2E 03 13 20 03'):"(Armorcraft)",
+            HexToByte('02 2E 03 13 21 03'):"(Goldsmithing)",
+            HexToByte('02 2E 03 13 22 03'):"(Leatherworking)",
+            HexToByte('02 2E 03 13 23 03'):"(Clothcraft)",
+            HexToByte('02 2E 03 13 24 03'):"(Alchemy)",
+            HexToByte('02 2E 03 13 25 03'):"(Cooking)",
+            HexToByte('02 2E 03 13 28 03'):"(Mining)",
+            HexToByte('02 2E 03 13 29 03'):"(Botany)",
+            HexToByte('02 2E 03 13 2A 03'):"(Fishing)",
+            HexToByte('02 2E 03 14 03 03'):"(Pugilist)",
+            HexToByte('02 2E 03 14 04 03'):"(Gladiator)",
+            HexToByte('02 2E 03 14 05 03'):"(Marauder)",
+            HexToByte('02 2E 03 14 08 03'):"(Archer)",
+            HexToByte('02 2E 03 14 09 03'):"(Lancer)",
+            HexToByte('02 2E 03 14 17 03'):"(Thaumaturge)",
+            HexToByte('02 2E 03 14 18 03'):"(Conjurer)",
+            HexToByte('02 2E 03 14 1E 03'):"(Carpenter)",
+            HexToByte('02 2E 03 14 1F 03'):"(Blacksmith)",
+            HexToByte('02 2E 03 14 20 03'):"(Armorer)",
+            HexToByte('02 2E 03 14 21 03'):"(Goldsmith)",
+            HexToByte('02 2E 03 14 22 03'):"(Leatherworker)",
+            HexToByte('02 2E 03 14 23 03'):"(Weaver)",
+            HexToByte('02 2E 03 14 24 03'):"(Alchemist)",
+            HexToByte('02 2E 03 14 25 03'):"(Culinarian)",
+            HexToByte('02 2E 03 14 28 03'):"(Miner)",
+            HexToByte('02 2E 03 14 29 03'):"(Botanist)",
+            HexToByte('02 2E 03 14 2A 03'):"(Fisher)",            
+            }
+
+    def printCrafting(self, currentcrafting):
+        #self.craftingdata
+        #print currentcrafting
+        #raw_input("")
+        return
+
+    def printDamage(self, currentmonster):
+        if len(currentmonster["damage"]) > 0:
+            hitpercent = 100
+            criticalavg = 0
+            criticalavgcount = 0
+            regularavg = 0
+            regularavgcount = 0
+            criticaldmgavg = 0
+            regulardmgavg = 0
+            totaldmgavg = 0
+            hitdmgavg = 0
+            hitdmgavgcount = 0
+            crithitdmgavg = 0
+            crithitdmgavgcount = 0
+            totalhitdmgavg = 0
+            othertotaldmg = 0
+            for otherdamage in currentmonster["otherdamage"]:
+                if otherdamage[0] == '':
+                    continue
+                othertotaldmg += int(otherdamage[0])
+            for hitdamage in currentmonster["hitdamage"]:
+                if hitdamage[0] == '':
+                    continue
+                if hitdamage[1] == True:
+                    crithitdmgavg = crithitdmgavg + int(hitdamage[0])
+                    crithitdmgavgcount = crithitdmgavgcount + 1
+                else:
+                    hitdmgavg = hitdmgavg + int(hitdamage[0])
+                    hitdmgavgcount = hitdmgavgcount + 1
+
+            for damage in currentmonster["damage"]:
+                if damage[0] == '':
+                    continue
+                if damage[1] == True:
+                    criticalavg = criticalavg + int(damage[0])
+                    criticalavgcount = criticalavgcount + 1
+                else:
+                    regularavg = regularavg + int(damage[0])
+                    regularavgcount = regularavgcount + 1
+            if crithitdmgavg != 0:
+                crithitdmgavg = crithitdmgavg / crithitdmgavgcount
+            if hitdmgavg != 0:
+                hitdmgavg = hitdmgavg / hitdmgavgcount
+            if crithitdmgavg + hitdmgavg != 0:
+                totalhitdmgavg = (crithitdmgavg + hitdmgavg) / (crithitdmgavgcount + hitdmgavgcount)
+            if criticalavg != 0:
+                criticaldmgavg = criticalavg / criticalavgcount
+            if regularavg != 0:
+                regulardmgavg = regularavg / regularavgcount
+            if criticalavg + regularavg != 0:
+                totaldmgavg = (criticalavg + regularavg) / (criticalavgcount + regularavgcount)
+            if currentmonster["miss"] > 0:
+                hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
+                hitpercent = (100 - hitpercent)
+            print u"敗北 %s ⇒ %s\nヒット %%: %i%%\n合計平均ダメージ: %i\nクリティカルの平均ダメージ: %i\nレギュラーの平均被害: %i\n合計ダメージ平均を撮影ヒット: %i\nクリティカルヒットのダメージの平均: %i\nダメージ平均ヒット: %i\nその他から合計ダメージ: %i\n経験値: %i\n修錬値: %i\n日付時刻: %s\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
+            self.monsterdata.append(currentmonster)
+            #if len(monsterdata) > 20:
+            #    uploadToDB()
+
+    def useitem(self, logitem):
+        if self.craftingcomplete == 1:
+            printCrafting(self.currentcrafting)
+            self.currentcrafting = copy.deepcopy(self.defaultcrafting)
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.craftingcomplete = 0
+        if logitem.find("Standard Synthesis") != -1:
+            # store previous value if valid:
+            if self.synthtype != "":
+                self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
+                self.progress = []
+                self.durability = []
+                self.quality = []
+            self.synthtype = "Standard"
+        elif logitem.find("Rapid Synthesis") != -1:
+            if self.synthtype != "":
+                self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
+                self.progress = []
+                self.durability = []
+                self.quality = []
+            self.synthtype = "Rapid"
+        elif logitem.find("Bold Synthesis") != -1:
+            if self.synthtype != "":
+                self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
+                self.progress = []
+                self.durability = []
+                self.quality = []
+            self.synthtype = "Bold"
+        else:
+            #print logitem
+            # TODO: need to handle all special types or they will be ingredients, setup
+            # an array with all traits and abilities and compare.
+            if logitem.find("You use a") != -1:
+                ingcount = 1
+            elif logitem.find("Touch Up") != -1:
+                return
+            else:
+                try:
+                    ingcount = int(logitem.split(" ")[2])
+                except ValueError:
+                    # this is a special so skip it for now...
+                    return
+            if logitem.find(" of ") != -1:
+                ingredient = logitem[logitem.find(" of ") +4:-1]
+            else:
+                ingredient = " ".join(logitem.split(" ")[3:])[:-1]
+            self.currentcrafting["ingredients"].append([ingredient, ingcount])
+    
+    def engaged(self, logitem):
+        if self.craftingcomplete == 1:
+            self.printCrafting(self.currentcrafting)
+            self.currentcrafting = copy.deepcopy(self.defaultcrafting)
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.craftingcomplete = 0
+        if logitem.find("You cannot change classes") != -1 or logitem.find("Levequest difficulty") != -1:
+            return
+        if self.defeated and self.spset:
+            self.defeated = False
+            self.spset = False
+            self.printDamage(self.currentmonster)
+
+        if not self.defeated and not self.spset:
+            self.currentmonster = copy.deepcopy(self.defaultmonster)
+            self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.currentmonster["monster"] = logitem[:logitem.find(u"を占有した")]
+        # no plural form
+        #self.currentmonster["monster"] = self.currentmonster["monster"].split('\'')[0]
+        
+    def parse_gathering(self, code, logitem):
+        self.echo("othergathering " + logitem, 1)
+
+    def parse_othergathering(self, code, logitem):
+        self.echo("othergathering " + logitem, 1)
+
+    def parse_leve(self, code, logitem):
+        self.echo("leve " + logitem, 1)
+
+    def parse_chatmessage(self, code, logitem):
+        #tabkey = '02 2E 05 0F F2 07 6F 03'
+        self.echo("chatmessage " + code + logitem, 1)
+        if (code == '1B') or (code == '19'):
+            user = ' '.join(logitem.split(' ')[0:2])
+            message = unicode(logitem)
+        else:
+            logitemparts = logitem.split(":")
+            user = logitemparts[0].strip()
+            message = unicode(":".join(logitemparts[1:]).strip())
+        try:
+            if message.find(self.autotranslateheader) != -1:
+                # found an auto translate
+                '''
+                if message.startswith("lang"):
+                    msgparts = message.split(" ")
+                    containsit = False
+                    for text, value in self.autotranslate.items():
+                        if message.find(text) != -1:
+                            containsit = True
+                            break
+                    if not containsit:
+                        #pass
+                        self.echo(ByteToHex(message), 0)
+                        self.echo("HexToByte('" + ByteToHex(msgparts[1]) + "'):" + "\"(" + " ".join(msgparts[2:]) + ")\",", 0)
+                '''
+                hasreplacement = False
+                for text, value in self.autotranslate.items():
+                    if message.find(text) != -1:
+                        hasreplacement = True
+                        message = message.replace(text, value)
+                if not hasreplacement:
+                    # Save this up to the server so we can investigate later and add it.
+                    pass
+                self.echo("Message: " + message, 1)
+            #raw_input("tab")
+        except:
+            traceback.print_exc(file=sys.stdout)
+
+    def parse_npcchat(self, code, logitem):
+        self.echo("npc chat " + logitem, 1)
+
+    def parse_invalidcommand(self, code, logitem):
+        self.echo("invalid command " + logitem, 1)
+
+    def parse_monstereffect(self, code, logitem):
+        self.echo("other abilities " + logitem, 1)
+
+    def parse_othereffect(self, code, logitem):
+        if logitem.find("grants you") != -1:	
+            effect = logitem[logitem.find("effect of ") +10:-1]
+        self.echo("other abilities " + logitem, 1)
+
+    def parse_partyabilities(self, code, logitem):
+        if logitem.find("grants") != -1:
+            effect = logitem[logitem.find("effect of ") +10:-1]
+        if logitem.find("inflicts") != -1:
+            monsteraffliction = logitem[logitem.find("effect of ") +10:-1]
+        self.echo("other abilities " + logitem, 1)
+
+    def parse_otherabilities(self, code, logitem):
+        self.echo("other abilities " + logitem, 1)
+
+    def parse_readyability(self, code, logitem):
+        self.echo("ready ability " + logitem, 1)
+
+    def parse_servermessage(self, code, logitem):
+        self.echo("server message " + logitem, 1)
+
+    def parse_invoke(self, code, logitem):
+        self.echo("invoke " + logitem, 1)
+
+    def parse_inflicts(self, code, logitem):
+        if logitem.find("inflicts you") != -1:
+            affliction = logitem[logitem.find("effect of ") +10:-1]
+            return
+        if logitem.find("inflicts") != -1:
+            othersaffliction = logitem[logitem.find("effect of ") +10:-1]            
+        self.echo("inflicts " + logitem, 1)
+
+    def parse_effect(self, code, logitem):
+        self.echo("effect " + logitem, 1)
+
+    def parse_otherrecover(self, code, logitem):
+        if logitem.find("recovers") != -1:	
+            othershealing = logitem[logitem.find("recovers ") +9:logitem.find(" HP")]
+        self.echo("otherrecover " + logitem, 1)
+
+    def parse_recover(self, code, logitem):
+        if logitem.find("You recover") != -1:
+            healing = logitem[logitem.find("recover ") +8:logitem.find(" HP")]
+        
+        self.echo("recover " + logitem, 1)
+
+    def parse_absorb(self, code, logitem):
+        if logitem.find("You absorb") != -1:
+            healing = logitem[logitem.find("absorb ") +7:logitem.find(" HP")]
+        
+        self.echo("absorb " + logitem, 1)
+
+    def parse_monstermiss(self, code, logitem):
+        self.echo("monstermiss " + logitem, 1)
+
+    def parse_othermiss(self, code, logitem):
+        if logitem.find(u"行動不能状態") != -1 or logitem.find(u"目標が遠すぎます。") != -1 or logitem.find("guard fails.") != -1 or logitem.find(u"効果がなかった") != -1:
+            return 
+        if logitem.find(u"攻撃を外してしまった") != -1:
+            attacker = logitem[:logitem.find(u"は")]
+            defender = logitem[logitem.find(u"は") +1:logitem.find(u"に")]
+            
+            if defender == self.currentmonster["monster"]:
+                misschar = logitem[:logitem.find(u"は")]
+                attacktype = logitem[logitem.find(u"「") +1:logitem.find(u"」")]
+                self.currentmonster["othermiss"].append([misschar, attacktype])
+                print "Other Miss"
+                print self.currentmonster["othermiss"]
+                return
+            elif attacker == self.currentmonster["monster"]:
+                self.parse_monstermiss(code, logitem)
+                return
+
+        self.echo("othermiss " + logitem, 1)
+
+    def parse_miss(self, code, logitem):
+        monster = logitem[logitem.find(u"は") +1:logitem.find(u"に")]
+        if monster == self.currentmonster["monster"]:
+            self.currentmonster["miss"] += 1
+            return
+        self.echo("miss " + logitem, 1)
+
+    def parse_otherhitdamage(self, code, logitem):
+        attacker = logitem[:logitem.find(u"は")]
+        defender = logitem[logitem.find(u"は") +1:logitem.find(u"に")]
+        
+        if attacker == self.currentmonster["monster"]:
+            if logitem.find(u"クリティカル！") != -1:
+                critical = 1
+            else:
+                critical = 0
+            attacktype = logitem[logitem.find(u"「") +1:logitem.find(u"」")]
+            if logitem.find(u"ダメージを与えた") != -1:
+                if critical:
+                    hitdamage = int(logitem[logitem.find(u"クリティカル！　") +9:logitem.find(u"ダメージを与えた")])
+                else:
+                    hitdamage = int(logitem[logitem.find(u"⇒　") +2:logitem.find(u"ダメージを与えた")])
+                self.currentmonster["otherhitdamage"].append([hitdamage, critical, attacktype, defender])
+                return
+        self.echo("otherhitdamage " + logitem, 1)
+
+    def parse_otherdamage(self, code, logitem):
+        # this one is tricky, the only way to tell if it is damage or a hit is to look at the
+        # order of the names and compare to see if it is the monster. Pain in the butt because
+        # they both come in from code 55... There are also quite a few variants that do not exist
+        # in the english version of the logs.
+        if logitem.find(u"に命中した") != -1:
+            # this is useless because it just shows the value (may be nice for other effects or something later.
+            return
+        attacker = logitem[:logitem.find(u"は")]
+        defender = logitem[logitem.find(u"は") +1:logitem.find(u"に")]
+        # this is a hit, not damage redirect to the right method.
+        if attacker == self.currentmonster["monster"]:
+            self.parse_otherhitdamage(code, logitem)
+            return
+        if logitem.find(u"クリティカル！") != -1:
+            critical = 1
+        else:
+            critical = 0
+        attacktype = logitem[logitem.find(u"「") +1:logitem.find(u"」")]
+        # Spell Resistance
+        if logitem.find(u"魔法に抵抗し") != -1:
+            damage = int(logitem[logitem.find(u"ダメージは") + 6:logitem.find(u"に半減された")])
+            self.currentmonster["otherdamage"].append([damage, critical, attacktype, attacker])
+            return
+        if logitem.find(u"に軽減された") != -1:
+            damage = int(logitem[logitem.find(u"ダメージは") + 6:logitem.find(u"に軽減された")])
+            self.currentmonster["otherdamage"].append([damage, critical, attacktype, attacker])
+            return
+        if logitem.find(u"のＭＰ") != -1:
+            # no use for MP drain right now.  later when i do healing it will be good.
+            return
+        if logitem.find(u"ダメージを与えた") != -1:
+            if critical:
+                damage = int(logitem[logitem.find(u"クリティカル！　") +9:logitem.find(u"ダメージを与えた")])
+            else:
+                # leg hit
+                if logitem.find(u"の脚部") != -1:
+                    damage = int(logitem[logitem.find(u"の脚部に") +5:logitem.find(u"のダメージを与えた")])
+                else:
+                    damage = int(logitem[logitem.find(u"⇒　") +2:logitem.find(u"ダメージを与えた")])
+            self.currentmonster["otherdamage"].append([damage, critical, attacktype, attacker])
+            return
+        self.echo("otherdamage code %s: %s " % (code, logitem), 1)
+
+    def parse_hitdamage(self, code, logitem):
+        if logitem.find(u"ダメージを与えた。") != -1:
+            if logitem.find(u"⇒　") == -1:
+                return
+            #monsterhit = logitem[logitem.find(u"⇒　") +2:logitem.find(" hits")]
+            monster = logitem.split(u"は")[0]
+            attacktype = logitem[logitem.find(u"「")+1:logitem.find(u"」")]
+            if monster == self.currentmonster["monster"]:
+                if logitem.find(u"クリティカル！") != -1:
+                    critical = 1
+                else:
+                    critical = 0
+                if critical:
+                    hitdamage = logitem[logitem.find(u"クリティカル！　") +9:logitem.find(u"ダメージを与えた。")]
+                else:
+                    hitdamage = logitem[logitem.find(u"⇒　") +2:logitem.find(u"ダメージを与えた。")]
+                self.currentmonster["hitdamage"].append([int(hitdamage), critical, attacktype])
+                return
+        self.echo("hitdamage " + logitem, 1)
+
+    def parse_damagedealt(self, code, logitem):
+        #if logitem.find("your") != -1 or logitem.find("Your") != -1:
+        # we can ignore From the left / right / back because of the formatting
+        # may want to record that later but not really needed for any useful stats
+        monster = logitem[logitem.find(u"は") +1:logitem.find(u"に")]
+        if monster == self.currentmonster["monster"]:						
+            if logitem.find(u"クリティカル！") != -1:
+                critical = 1
+            else:
+                critical = 0
+            attacktype = logitem[logitem.find(u"「") +1:logitem.find(u"」")]
+            if critical:
+                damage = logitem[logitem.find(u"クリティカル！　") +9:logitem.find(u"ダメージを与えた。")]
+            else:
+                damage = logitem[logitem.find(u"⇒　") +2:logitem.find(u"ダメージを与えた。")]
+            self.currentmonster["damage"].append([int(damage), critical, attacktype])
+            return
+        self.echo("damagedealt " + logitem, 1)
+
+    def parse_craftingsuccess(self, code, logitem):
+        #print logitem
+        # Crafting success
+        if logitem.find("You create") != -1:
+            if logitem.find(" of ") != -1:
+                self.currentcrafting["item"] = logitem[logitem.find(" of ")+4:-1]
+            else:
+                self.currentcrafting["item"] = logitem[logitem.find(" a ")+3:-1]
+            self.currentcrafting["success"] = 1
+        # botched it
+        if logitem.find("botch") != -1:
+            self.currentcrafting["success"] = 0
+        self.craftingcomplete = 1
+        
+        self.echo("crafting success " + logitem, 1)
+
+    def parse_defeated(self, code, logitem):
+        if self.craftingcomplete == 1:
+            printCrafting(self.currentcrafting)
+            self.currentcrafting = copy.deepcopy(self.defaultcrafting)
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.craftingcomplete = 0
+        if logitem.find(u"一群") != -1:
+            return
+        if logitem.find("defeats you") != -1:
+            # You were killed...
+            self.characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime)), "class":self.currentmonster["class"]})
+            #0045::The fat dodo defeats you.
+            return
+        if logitem.find(u"を倒した。") != -1:
+            monster = logitem[:logitem.find(u"を倒した。")]
+            if monster != self.currentmonster["monster"]:
+                return
+            self.defeated = True
+            return
+
+        self.echo("defeated " + logitem, 1)
+
+    def parse_spexpgain(self, code, logitem):
+        if logitem.find(u"の経験値") != -1:
+            points = logitem[logitem.find(u"は")+1:logitem.find(u"の経験値")]
+            self.currentmonster["exp"] = int(points)
+            self.currentcrafting["exp"] = int(points)
+            self.expset = True
+            return
+        elif logitem.find(u"修錬") != -1:
+            sp = logitem[logitem.find(u"値") + 1:logitem.find(u"を得")]
+            self.currentmonster["skillpoints"] = int(sp)
+            self.currentmonster["class"] = logitem[logitem.find(u"「") + 1:logitem.find(u"」")]
+            self.currentcrafting["skillpoints"] = int(sp)
+            self.currentcrafting["class"] = logitem[logitem.find(u"「") + 1:logitem.find(u"」")]
+            self.spset = True
+            return
+        if self.expset and self.spset and self.defeated:
+            self.engaged(code, logitem)
+
+        self.echo("spexpgain " + logitem, 1)
+
+    def parse_genericmessage(self, code, logitem):
+        if logitem.find(u"を占有した") != -1:
+            self.engaged(logitem)
+        elif logitem.find("You use") != -1:
+            self.useitem(logitem)
+        elif logitem.find("Progress") != -1:
+            # save progress as array of % and it was an increase or decrease
+            if logitem.find("increases") != -1:
+                self.progress = [logitem[logitem.find("by ") +3:-2], 1]
+            else:
+                self.progress = [logitem[logitem.find("by ") +3:-2], 0]
+        elif logitem.find("Durability") != -1:
+            if logitem.find("increases") != -1:
+                self.durability = [logitem[logitem.find("by ") +3:-1], 1]
+            else:
+                self.durability = [logitem[logitem.find("by ") +3:-1], 0]
+        elif logitem.find("Quality") != -1:
+            if logitem.find("increases") != -1:
+                self.quality = [logitem[logitem.find("by ") +3:-1], 1]
+            else:
+                self.quality = [logitem[logitem.find("by ") +3:-1], 0]
+        else:
+            pass
+            #print "generic"
+            #print logitem
+       
+            
+        self.echo("generic " + logitem, 1)
+
 
 def printCrafting(currentcrafting):
     global craftingdata
@@ -503,391 +2697,103 @@ def printDamage(currentmonster):
         #if len(monsterdata) > 20:
         #    uploadToDB()
 
-def readLogFile(paths, logdatatype, charactername, logmonsterfilter = None, isrunning=None, password=""):
-    exptotal = 0
-    damagepermob = 0
-    damageavgpermob = 0
-    craftingcomplete = 0
-    synthtype = ""
-    progress = []
-    quality = []
-    durability = []
-    defeated = False
-    expset = False
-    spset = False
-    characterdata["charactername"] = charactername
-    currentmonster = copy.deepcopy(defaultmonster)
-    currentcrafting = copy.deepcopy(defaultcrafting)
+
+def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, password=""):
+    en_parser = english_parser()
+    jp_parser = japanese_parser()
+    en_parser.characterdata["charactername"] = charactername
+    jp_parser.characterdata["charactername"] = charactername
     for logfilename in paths:
-        logfiletime = os.stat(logfilename).st_mtime
-        logfile = open(logfilename, 'r')
-        logdata = logfile.read()
-        logdata = logdata.split("00")
-        for logitem in logdata[1:]:
-            if isrunning:
-                if not isrunning():
-                    return
-            if logdatatype == "battle":
-                #print logitem
-                #if logitem.find("Welcome") != -1:
-                #    raw_input("welcome")
-                if logitem.startswith("20::"):
-                    if logitem.find("engaged") != -1:
-                        if craftingcomplete == 1:
-                            printCrafting(currentcrafting)
-                            currentcrafting = copy.deepcopy(defaultcrafting)
-                            currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(logfiletime))
-                            craftingcomplete = 0
-                        if logitem.find("You cannot change classes") != -1 or logitem.find("Levequest difficulty") != -1:
-                            continue
-                        if defeated and spset:
-                            defeated = False
-                            spset = False
-                            printDamage(currentmonster)
-
-                        currentmonster = copy.deepcopy(defaultmonster)
-                        currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(logfiletime))
-                        currentmonster["monster"] = logitem[logitem.find("The ") +4:logitem.find(" is")]
-                        currentmonster["monster"] = currentmonster["monster"].split('\'')[0]
-                    #elif logitem.find("your class to ") != -1:
-                    #	currentmonster["class"] = logitem[logitem.find("class to ")+9:-1]
-                    #	currentcrafting["class"] = logitem[logitem.find("class to ")+9:-1]
-                    #	raw_input("ingredients")
-                    elif logitem.find("You use") != -1:
-                        if craftingcomplete == 1:
-                            printCrafting(currentcrafting)
-                            currentcrafting = copy.deepcopy(defaultcrafting)
-                            currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(logfiletime))
-                            craftingcomplete = 0
-                        if logitem.find("Standard Synthesis") != -1:
-                            # store previous value if valid:
-                            if synthtype != "":
-                                currentcrafting["actions"].append([synthtype, progress, durability, quality])
-                                progress = []
-                                durability = []
-                                quality = []
-                            synthtype = "Standard"
-                        elif logitem.find("Rapid Synthesis") != -1:
-                            if synthtype != "":
-                                currentcrafting["actions"].append([synthtype, progress, durability, quality])
-                                progress = []
-                                durability = []
-                                quality = []
-                            synthtype = "Rapid"
-                        elif logitem.find("Bold Synthesis") != -1:
-                            if synthtype != "":
-                                currentcrafting["actions"].append([synthtype, progress, durability, quality])
-                                progress = []
-                                durability = []
-                                quality = []
-                            synthtype = "Bold"
-                        else:
-                            #print logitem
-                            # TODO: need to handle all special types or they will be ingredients, setup
-                            # an array with all traits and abilities and compare.
-                            if logitem.find("You use a") != -1:
-                                ingcount = 1
-                            elif logitem.find("Touch Up") != -1:
-                                continue
-                            else:
-                                try:
-                                    ingcount = int(logitem.split(" ")[2])
-                                except ValueError:
-                                    # this is a special so skip it for now...
-                                    continue
-                            if logitem.find(" of ") != -1:
-                                ingredient = logitem[logitem.find(" of ") +4:-1]
-                            else:
-                                ingredient = " ".join(logitem.split(" ")[3:])[:-1]
-                            currentcrafting["ingredients"].append([ingredient, ingcount])
-                    elif logitem.find("Progress") != -1:
-                        # save progress as array of % and it was an increase or decrease
-                        if logitem.find("increases") != -1:
-                            progress = [logitem[logitem.find("by ") +3:-2], 1]
-                        else:
-                            progress = [logitem[logitem.find("by ") +3:-2], 0]
-                    elif logitem.find("Durability") != -1:
-                        if logitem.find("increases") != -1:
-                            durability = [logitem[logitem.find("by ") +3:-1], 1]
-                        else:
-                            durability = [logitem[logitem.find("by ") +3:-1], 0]
-                    elif logitem.find("Quality") != -1:
-                        if logitem.find("increases") != -1:
-                            quality = [logitem[logitem.find("by ") +3:-1], 1]
-                        else:
-                            quality = [logitem[logitem.find("by ") +3:-1], 0]
-                    else:
-                        pass
-                        #print logitem
-                elif logitem.startswith("42::") or logitem.startswith("43::"):
-                    if logitem.startswith("42::"):
-                        logitem = logitem.strip("42::")
-                    elif logitem.startswith("43::"):
-                        logitem = logitem.strip("43::")
-                    pos = logitem.find("You gain")
-                    if pos > -1:
-                        points = ""
-                        skill = ""
-                        if logitem.find("experience") > -1:
-                            points = logitem[9:logitem.find("experience") -1]
-                            #exptotal += int(points)
-                            currentmonster["exp"] = int(points)
-                            currentcrafting["exp"] = int(points)
-                            expset = True
-                        elif logitem.find("skill") > -1:
-                            logitemparts = logitem.split(" ")
-                            currentmonster["skillpoints"] = int(logitemparts[2])
-                            currentmonster["class"] = logitemparts[3]
-                            currentcrafting["skillpoints"] = int(logitemparts[2])
-                            currentcrafting["class"] = logitemparts[3]
-                            spset = True
-                elif logitem.startswith("45::") or  logitem.startswith("44::"):
-                    if craftingcomplete == 1:
-                        printCrafting(currentcrafting)
-                        currentcrafting = copy.deepcopy(defaultcrafting)
-                        currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(logfiletime))
-                        craftingcomplete = 0
-                    if logitem.find("group") != -1:
-                        continue
-                    if logitem.find("defeats you") != -1:
-                        # You were killed...
-                        characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.localtime(logfiletime)), "class":currentmonster["class"]})
-                        #0045::The fat dodo defeats you.
-                        continue
-                    if logitem.find("defeat") != -1:
-                        monster = logitem[logitem.find("The ") +4:logitem.find(" is defeat")].split('\'')[0]
-                        if logmonsterfilter:
-                            if monster != logmonsterfilter or monster != currentmonster["monster"]:
-                                continue
-                        defeated = True
-                elif logitem.startswith("46::"):
-                    #print logitem
-                    # Crafting success
-                    if logitem.find("You create") != -1:
-                        if logitem.find(" of ") != -1:
-                            currentcrafting["item"] = logitem[logitem.find(" of ")+4:-1]
-                        else:
-                            currentcrafting["item"] = logitem[logitem.find(" a ")+3:-1]
-                        currentcrafting["success"] = 1
-                    # botched it
-                    if logitem.find("botch") != -1:
-                        currentcrafting["success"] = 0
-                    craftingcomplete = 1
-                elif logitem.startswith("50::"):
-                    if logitem.find("your") != -1 or logitem.find("Your") != -1:
-                        logitem = logitem.strip("50::")
-                        if logitem.find("from the ") != -1:
-                            monster = logitem[logitem.find("the ") +4:logitem.find(" from the")]
-                        else:
-                            monster = logitem[logitem.find("the ") +4:logitem.find(" for")]
-                        if monster == currentmonster["monster"]:						
-                            if logitem.find("Critical!") != -1:
-                                critical = 1
-                            else:
-                                critical = 0
-                            attacktype = logitem[logitem.find("Your ") +5:logitem.find(" hits")]
-                            if logitem.find(" points") != -1:
-                                damage = logitem[logitem.find("for ") +4:logitem.find(" points")]
-                                currentmonster["damage"].append([damage, critical, attacktype])
-                elif logitem.startswith("51::"):
-                    if logitem.find("hits you") != -1:
-                        logitem = logitem.strip("51::")
-                        if logitem.find("points") == -1:
-                            continue
-                        monsterhit = logitem[logitem.find("The ") +4:logitem.find(" hits")]
-                        monster = monsterhit.split('\'')[0]
-                        attacktype = monsterhit[monsterhit.find("'s ")+3:]
-                        if monster == currentmonster["monster"]:
-                            hitdamage = logitem[logitem.find("for ") +4:logitem.find(" points")]
-                            if logitem.find("Critical!") != -1:
-                                critical = 1
-                            else:
-                                critical = 0
-                            currentmonster["hitdamage"].append([hitdamage, critical, attacktype])
-                elif logitem.startswith("52::"):
-                    logitem = logitem.strip("52::")
-                    if logitem.find("from the ") != -1:
-                        monster = logitem[logitem.find("the ") +4:logitem.find(" from the")]
-                    else:
-                        monster = logitem[logitem.find("the ") +4:logitem.find(" for")]
-                    if monster == currentmonster["monster"]:						
-                        if logitem.find("Critical!") != -1:
-                            critical = 1
-                        else:
-                            critical = 0
-                        #print logitem
-                        #raw_input("damage");
-                        attackchar = ""
-                        if critical:
-                            attackchar = logitem[10: logitem.find("'s ")]
-                        else:
-                            attackchar = logitem[: logitem.find("'s ")]
-                        attacktype = logitem[logitem.find("'s ") +3:logitem.find(" hits")]
-                        if logitem.find(" points") != -1:
-                            damage = logitem[logitem.find("for ") +4:logitem.find(" points")]
-                            currentmonster["otherdamage"].append([damage, critical, attacktype, attackchar])
-                elif logitem.startswith("53::"):
-                    if logitem.find("hits ") != -1:
-                        logitem = logitem.strip("53::")
-                        if logitem.find("points") == -1:
-                            continue
-                        monsterhit = logitem[logitem.find("The ") +4:logitem.find(" hits")]
-                        monster = monsterhit.split('\'')[0]
-                        attacktype = monsterhit[monsterhit.find("'s ")+3:]
-                        if monster == currentmonster["monster"]:
-                            if logitem.find("Critical!") != -1:
-                                critical = 1
-                            else:
-                                critical = 0
-                            if logitem.find(" points") != -1:
-                                if logitem.find("from the") != -1:
-                                    hitchar = logitem[logitem.find("hits ") + 5:logitem.find(" from")]
-                                else:
-                                    hitchar = logitem[logitem.find("hits ") + 5:logitem.find(" for")]
-                                hitdamage = logitem[logitem.find("for ") +4:logitem.find(" points")]
-                                currentmonster["otherhitdamage"].append([hitdamage, critical, attacktype, hitchar])
-                        
-                elif logitem.startswith("56::"):
-                    monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
-                    if monster == currentmonster["monster"]:
-                        currentmonster["miss"] += 1
-                elif logitem.startswith("58::"):
-                    logitem = logitem.strip("58::")
-                    if logitem.find("KO'd target") != -1 or logitem.find("too far away") != -1 or logitem.find("guard fails.") != -1 or logitem.find("fails to take effect.") != -1:
-                        continue
-                    if logitem.find("evades") != -1:
-                        monster = logitem[logitem.find("The ") + 4:logitem.find(" evades")]
-                        if monster == currentmonster["monster"]:
-                            misschar = logitem[logitem.find("evades") + 7:logitem.find("'s ")]
-                            attacktype = logitem[logitem.find("'s ") + 3:logitem.find(".")]
-                            currentmonster["othermiss"].append([misschar, attacktype])
-                    else:
-                        if logitem.find("from the") != -1:
-                            monster = logitem[logitem.find("the ") +4:logitem.find(" from the")].split('\'')[0]
-                        else:
-                            monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
-                        if monster == currentmonster["monster"]:
-                            misschar = logitem[: logitem.find("'s ")]
-                            attacktype = logitem[logitem.find("'s ") + 3:logitem.find(" misses")]
-                            currentmonster["othermiss"].append([misschar, attacktype])
-                #elif logitem.startswith("59::"):
-                #	monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
-                #	if monster == currentmonster["monster"]:
-                #		currentmonster["othermiss"] += 1
-                # TODO: Do something with healing -- EVERYTHING BELOW THIS LINE NEEDS TO BE ADDED!
-                elif logitem.startswith("5C::"):
-                    if logitem.find("You absorb") != -1:
-                        healing = logitem[logitem.find("absorb ") +7:logitem.find(" HP")]
-                elif logitem.startswith("5D::"):
-                    if logitem.find("You recover") != -1:
-                        healing = logitem[logitem.find("recover ") +8:logitem.find(" HP")]
-                elif logitem.startswith("5E::"):
-                    if logitem.find("recovers") != -1:	
-                        othershealing = logitem[logitem.find("recovers ") +9:logitem.find(" HP")]
-                elif logitem.startswith("63::"):
-                    if logitem.find("grants you") != -1:	
-                        effect = logitem[logitem.find("effect of ") +10:-1]
-                elif logitem.startswith("64::"):
-                    if logitem.find("grants") != -1:
-                        effect = logitem[logitem.find("effect of ") +10:-1]
-                    if logitem.find("inflicts") != -1:
-                        monsteraffliction = logitem[logitem.find("effect of ") +10:-1]
-                elif logitem.startswith("69::"):
-                    if logitem.find("inflicts you") != -1:
-                        affliction = logitem[logitem.find("effect of ") +10:-1]
-                elif logitem.startswith("6B::"):
-                    if logitem.find("inflicts") != -1:
-                        othersaffliction = logitem[logitem.find("effect of ") +10:-1]
-                else:
+        try:
+            logfiletime = os.stat(logfilename).st_mtime
+            en_parser.setLogFileTime(logfiletime)
+            jp_parser.setLogFileTime(logfiletime)
+            logfile = open(logfilename, 'r')
+            logdata = logfile.read()
+            logdata = logdata.split("00")
+            for logitem in logdata[1:]:
+                try:
+                    en_parser.parse_line(unicode(logitem, 'utf-8', errors='replace'))
+                except UnicodeDecodeError:
                     pass
-                    #print logitem
-                    '''0020::You have received the required materials.
-                    0047::Mie Miqolatte creates a trapper's tunic.
-                    001B::Zilbelt Stanford bows courteously to Maisenta.
-                    0020::You use Standard Synthesis. The attempt succeeds!
-                    0020::Progress increases by 10%.
-                    0020::Durability decreases by 4.
-                    0020::Quality increases by 3.
-                    0020::You use Standard Synthesis. The attempt succeeds!
-                    0020::Progress increases by 17%.
-                    0020::Quality increases by 5.
-                    001B::Zilbelt Stanford bows courteously to Maisenta.
-                    0020::You use Standard Synthesis. The attempt fails!
-                    0020::Progress increases by 3%.
-                    0020::Durability decreases by 13.0020::You use Standard Synthesis. The attempt succeeds!0020::Progress increases by 17%.0020::Durability decreases by 4.0020::Quality increases by 4.0020::You use Standard Synthesis. The attempt fails!0020::Progress increases by 8%.0020::Durability decreases by 10.0020::You use Standard Synthesis. The attempt fails!0020::Progress increases by 8%.0020::Durability decreases by 11.001B::Zilbelt Stanford bows courteously to Maisenta.0020::You use Standard Synthesis. The attempt succeeds!0020::Progress increases by 16%.0020::Durability decreases by 4.0020::Quality increases by 4.0020::You use Standard Synthesis. The attempt fails!0020::Progress increases by 5%.0020::Durability decreases by 11.0020::You use Standard Synthesis. The attempt fails!0020::Progress increases by 6%.0020::Durability decreases by 12.0020::The harnessed Earth element becomes unstable!0020::You use Standard Synthesis. 0020::Progress increases by 11%.
-                    0020::Durability decreases by 9.0020::Quality increases by 2.0046::You create a silver wristlet.0020::The appraisal of your synthesized items increases by 4. (Total: 4)0020::â€œThe Band's Bandsâ€ synthesis successful. (1 of 4)0042::You gain 436 goldsmithing skill points.0042::You gain 1909 experience points.
-                    '''
-            if logdatatype == "chat":
-                if logitem.startswith("04:") or logitem.startswith("01:") or logitem.startswith("0F:"):
-                    logitemparts = logitem.split(":")
-                    print "User: " + logitemparts[1]
-                    print "Message: " + ":".join(logitemparts[2:])
-            if logdatatype == "party":
-                if logitem.startswith("04:"):
-                    logitemparts = logitem.split(":")
-                    print "User: " + logitemparts[1]
-                    print "Message: " + ":".join(logitemparts[2:])
-            if logdatatype == "say":
-                if logitem.startswith("01:"):
-                    logitemparts = logitem.split(":")
-                    print "User: " + logitemparts[1]
-                    print "Message: " + ":".join(logitemparts[2:])
-            if logdatatype == "linkshell":
-                if logitem.startswith("0F:"):
-                    logitemparts = logitem.split(":")
-                    print "User: " + logitemparts[1]
-                    print "Message: " + ":".join(logitemparts[2:])
+                except:
+                    traceback.print_exc(file=sys.stdout)
+                try:
+                    jp_parser.parse_line(unicode(logitem, 'utf-8', errors='replace'))
+                except UnicodeDecodeError:
+                    pass
+                except:
+                    traceback.print_exc(file=sys.stdout)
+                if isrunning:
+                    if not isrunning():
+                        return
+                continue
+        finally:            
+            logfile.close()
+    #return
+    uploadToDB(password, [en_parser, jp_parser])
 
-        logfile.close()
-    uploadToDB(password)
-
-def uploadToDB(password=""):
+def uploadToDB(password="", parsers=[]):
     global doloop
-    global monsterdata
-    global craftingdata
-    global gatheringdata
     
-    if not doloop:
-        response = raw_input("Do you wish to display raw data? [y/N]: ")
-    else:
-        response = "no"
-    tmpdata = {"version": version, "password": password, "character": characterdata, "battle": monsterdata, "crafting":craftingdata, "gathering":gatheringdata}
-    jsondata = json.dumps(tmpdata)
-    if response.upper() == "Y" or response.upper() == "YES":
-        print "JSON encoded for upload:"
-        print jsondata
-    if not doloop:
-        response = raw_input("\nDo you wish to upload the data printed above? [Y/n]: ")
-    else:
-        response = "YES"
-    if response == "" or response.upper() == "Y" or response.upper() == "YES":
-        url = doUpload(jsondata)
-        #if not doloop:
-        print "\nTotal Global Battle Records: %s" % url["totalbattlerecords"]
-        print "Total New Character Deaths: %s" % url["deaths"]
-        print "Records Sent (Duplicates ignored): %s" % url["recordsimported"]
-        print "Records Uploaded To Website: %s" % url["updatedrecords"]
-        if int(url["updatedrecords"]) > 0:
-            print "\nYour data has been uploaded, you can view it at: \n\n%s" % url["url"] 
+    for parser in parsers:
+        tmpdata = {"version": version, "language": parser.getlanguage(), "password": password, "character": parser.characterdata, "battle": parser.monsterdata, "crafting":parser.craftingdata, "gathering":parser.gatheringdata}
+        jsondata = json.dumps(tmpdata)
+        if not doloop:
+            response = raw_input("Do you wish to display raw data? [y/N]: ")
         else:
-            print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"] 
-    else:
-        print "Your data will not be sent."
-    monsterdata = []
-    craftingdata = []
-    gatheringdata = []
-    characterdata["deaths"] = []
+            response = "no"
+        if response.upper() == "Y" or response.upper() == "YES":
+            if parser.getlanguage() == "en":
+                print "JSON encoded for upload:"
+            elif parser.getlanguage() == "jp":
+                print u"JSONは、アップロード用にエンコードされた:"
+            print jsondata
+        if not doloop:
+            response = raw_input("\nDo you wish to upload the data printed above? [Y/n]: ")
+        else:
+            response = "YES"
+        if response == "" or response.upper() == "Y" or response.upper() == "YES":
+            url = doUpload(jsondata)
+            if parser.getlanguage() == "jp":
+                print u"\n合計グローバルバトルレコード: %s" % url["totalbattlerecords"]
+                print u"合計新キャラクター死亡: %s" % url["deaths"]
+                print u"レコード送信（無視される重複）: %s" % url["recordsimported"]
+                print u"ウェブサイトにアップロードされたレコード: %s" % url["updatedrecords"]
+                if int(url["updatedrecords"]) > 0:
+                    print u"\nあなたのデータはあなたがそれを見ることができる、アップロードされています： \n\n%s" % url["url"] 
+                else:
+                    print u"\nいいえ、新しいレコード。あなたはあなたのデータを表示することができます： \n\n%s\n" % url["url"] 
+            elif parser.getlanguage() == "en":
+                print "\nTotal Global Battle Records: %s" % url["totalbattlerecords"]
+                print "Total New Character Deaths: %s" % url["deaths"]
+                print "Records Sent (Duplicates ignored): %s" % url["recordsimported"]
+                print "Records Uploaded To Website: %s" % url["updatedrecords"]
+                if int(url["updatedrecords"]) > 0:
+                    print "\nYour data has been uploaded, you can view it at: \n\n%s" % url["url"] 
+                else:
+                    print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"]                 
+        else:
+            if parser.getlanguage() == "jp":
+                print "Your data will not be sent."
+            elif parser.getlanguage() == "jp":
+                print u"あなたのデータは送信されません。."
+
+        parser.monsterdata = []
+        parser.craftingdata = []
+        parser.gatheringdata = []
+        parser.characterdata["deaths"] = []
 
 def doUpload(jsondata):
     try:
         url = 'http://ffxivbattle.com/postlog.php'
         user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
         values = {'jsondata' : jsondata }
-        headers = { 'User-Agent' : "H3lls Log Parser v 1.9" }
-
-        data = "jsondata=%s" % jsondata
+        headers = { 'User-Agent' : "H3lls Log Parser v 1.9",
+            'Content-Type': 'text/plain; charset=utf-8' }
+        #data = unicode(jsondata, 'utf-8')
         #print data
-        req = urllib2.Request(url, data, headers)
+        req = urllib2.Request(url, jsondata, headers)
         response = urllib2.urlopen(req)
         jsonresults = response.read()
         #print jsonresults
@@ -925,21 +2831,21 @@ def doAppUpdate():
 def versioncheck(status=0):
     response = None
     try:
-        response = urllib2.urlopen('http://ffxivbattle.com/logparserversion.php');
+        response = urllib2.urlopen('http://ffxivbattle.com/logparserversion-2.php');
     except:
         # There was a problem reading the version page skip it.
         print "Unable to read the remote version number."
         return 0
     try:
         #print response.read()
-        remoteversion = float(response.read())
-        if remoteversion > version:
-            verdialog = wx.MessageDialog(None, 'A new version is available would you like to download and install it?', 'New Version', 
+        versiondata = json.loads(response.read())
+        if versiondata["version"] > version:
+            verdialog = wx.MessageDialog(None, 'A new version is available would you like to download and install it?\r\nChanges: \r\n%s' % (versiondata["changetext"]), 'Version %d Available' % (versiondata["version"]), 
             wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
             if verdialog.ShowModal() == wx.ID_YES:
                 return doAppUpdate()
         elif status:
-            okdlg = wx.MessageDialog(None, 'You are currently running the latest version.', 'New Version', wx.OK)
+            okdlg = wx.MessageDialog(None, 'You are currently running the latest version.', 'Latest Version', wx.OK)
             okdlg.ShowModal()
     except ValueError, e:
         # The result was garbage so skip it.
