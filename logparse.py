@@ -20,7 +20,7 @@ import urllib2
 import uuid
 from subprocess import Popen
 try:
-    from agw import hyperlink
+    from agw import hyperlink as hl
 except ImportError: # if it's not there locally, try the wxPython lib.
     import wx.lib.agw.hyperlink as hl
 
@@ -54,7 +54,47 @@ class PasswordDialog(wx.Dialog):
     def GetValue(self):
         return self.password.GetValue()
 
+        
 class MainFrame(wx.Frame):
+    def SetEnglish(self, event):
+        self.SetTitle("FFXIV Log Parser")
+        self.filemenu.SetLabel(1, "&Start")
+        self.filemenu.SetHelpString(1, " Start Processing Logs")
+        self.filemenu.SetLabel(wx.ID_ABOUT, "&About")
+        self.filemenu.SetHelpString(wx.ID_ABOUT, " Information about this program")
+        self.filemenu.SetLabel(2, "&Check for New Version")
+        self.filemenu.SetHelpString(2, " Check for an update to the program")
+        self.filemenu.SetLabel(wx.ID_EXIT, "E&xit")
+        self.filemenu.SetHelpString(wx.ID_EXIT, " Terminate the program")
+        self.menuBar.SetLabelTop(0, "&File")
+        self.menuBar.SetLabelTop(1, "&Language")
+        self.st.SetLabel("Select Log Path")
+        self.st2.SetLabel("Enter Your Character Name (default is unique id to hide your name)")
+        self.btnStart.SetLabel("Start")
+        self.lblLogWindow.SetLabel("Activity Log")
+        self.charlink.SetLabel("test")
+        self.charlink.SetLabel("FFXIVBattle.com Character Page")
+        self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=%s&lang=en" % (self.charname.GetValue()))
+
+    def SetJapanese(self, event):
+        self.SetTitle(u"FFXIVのログパーサー")
+        self.filemenu.SetLabel(1, u"開始")
+        self.filemenu.SetHelpString(1, u"スタート処理のログ")
+        self.filemenu.SetLabel(wx.ID_ABOUT, u"について")
+        self.filemenu.SetHelpString(wx.ID_ABOUT, u"このプログラムについての情報")
+        self.filemenu.SetLabel(2, u"新しいバージョンの確認")
+        self.filemenu.SetHelpString(2, u"プログラムの更新をチェックする")
+        self.filemenu.SetLabel(wx.ID_EXIT, u"終了")
+        self.filemenu.SetHelpString(wx.ID_EXIT, u"終了プログラム")
+        self.menuBar.SetLabelTop(0, u"ファイル")
+        self.menuBar.SetLabelTop(1, u"言語")
+        self.st.SetLabel(u"選択してログのパス")
+        self.st2.SetLabel(u"文字型の名前 （デフォルトでは、名前を非表示にする一意のIDです）")
+        self.btnStart.SetLabel(u"開始")
+        self.lblLogWindow.SetLabel(u"アクティビティログ")
+        self.charlink.SetLabel(u"FFXIVBattle.com文字ページ")
+        self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=%s&lang=jp" % (self.charname.GetValue()))
+
     def __init__(self, parent, title):
         global configfile
         wx.Frame.__init__(self, parent, title=title, size=(400,314))
@@ -75,12 +115,24 @@ class MainFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnCheckVersion, id=2)
         self.Bind(wx.EVT_MENU, self.OnExit, id=wx.ID_EXIT)
         self.Bind(wx.EVT_MENU, self.OnAbout, id=wx.ID_ABOUT)#menuItem)
+
+        # Setup language menu
+        self.languagemenu= wx.Menu()
+        self.englishMenu = self.languagemenu.Append(11, "&English","Set application to english display", kind=wx.ITEM_RADIO)
+        self.japaneseMenu = self.languagemenu.Append(12, u"日本語", u"日本語表示", kind=wx.ITEM_RADIO)
+        self.Bind(wx.EVT_MENU, self.SetEnglish, id=11)
+        self.Bind(wx.EVT_MENU, self.SetJapanese, id=12)
+
+
         # Creating the menubar.
-        menuBar = wx.MenuBar()
-        menuBar.Append(self.filemenu,"&File") # Adding the "filemenu" to the MenuBar
-        self.SetMenuBar(menuBar)  # Adding the MenuBar to the Frame content.
-        
-        panel = wx.Panel(self, -1)		
+        self.menuBar = wx.MenuBar()
+        self.menuBar.Append(self.filemenu,"&File") # Adding the "filemenu" to the MenuBar
+        self.menuBar.Append(self.languagemenu,"&Language") # Adding the "filemenu" to the MenuBar
+        self.SetMenuBar(self.menuBar)  # Adding the MenuBar to the Frame content.
+
+        self.languagemenu.Check(11, True)
+
+        panel = wx.Panel(self, -1)
         logpath = ""
         charactername = hex(uuid.getnode())
         # read defaults
@@ -116,17 +168,17 @@ class MainFrame(wx.Frame):
         self.control = wx.TextCtrl(panel, -1, logpath, (5,21), (345, 22))
         self.btnDialog = wx.Button(panel, 102, "...", (350,20), (28, 24))
         self.Bind(wx.EVT_BUTTON, self.OnLogSelect, id=102)
-        self.st = wx.StaticText(panel, -1, 'Enter Your Character Name (default is unique id to hide your name)', (5,53))
+        self.st2 = wx.StaticText(panel, -1, 'Enter Your Character Name (default is unique id to hide your name)', (5,53))
         self.charname = wx.TextCtrl(panel, -1, charactername, (5,70), (370, 22))
-        self.btnDialog = wx.Button(panel, 103, "Start", (150,100))
+        self.btnStart = wx.Button(panel, 103, "Start", (150,100))
         self.Bind(wx.EVT_BUTTON, self.OnStartCollecting, id=103)
 
         self.Bind(wx.EVT_SIZE, self.OnSize)
         
-        lblLogWindow = wx.StaticText( panel, -1, "Activity Log", (5,120))
+        self.lblLogWindow = wx.StaticText( panel, -1, "Activity Log", (5,120))
         self.logWindow = wx.TextCtrl(panel, -1, "", (5,136), (370, 80), style=wx.TE_MULTILINE)
         self.logLayout = wx.BoxSizer( wx.HORIZONTAL )
-        self.logLayout.Add( lblLogWindow, 0, wx.EXPAND )
+        self.logLayout.Add( self.lblLogWindow, 0, wx.EXPAND )
         self.logLayout.Add( self.logWindow, 1, wx.EXPAND | wx.BOTTOM | wx.RIGHT )
 
         redir=RedirectText(self.logWindow)
@@ -202,7 +254,10 @@ class MainFrame(wx.Frame):
                 self.logWindow.AppendText( text ) 
 
     def OnLogSelect(self, e):
-        dlg = wx.DirDialog(self, "Choose the Log Directory:", self.control.GetValue(), style=wx.DD_DEFAULT_STYLE | wx.DD_NEW_DIR_BUTTON)
+        if self.japaneseMenu.IsChecked():
+            dlg = wx.DirDialog(self, u"ログディレクトリを選択してください：", self.control.GetValue(), style=wx.DD_DEFAULT_STYLE | wx.DD_NEW_DIR_BUTTON)
+        else:
+            dlg = wx.DirDialog(self, "Choose the Log Directory:", self.control.GetValue(), style=wx.DD_DEFAULT_STYLE | wx.DD_NEW_DIR_BUTTON)
         if dlg.ShowModal() == wx.ID_OK:
             self.control.SetValue(dlg.GetPath())
         dlg.Destroy()
@@ -210,12 +265,19 @@ class MainFrame(wx.Frame):
     def OnAbout(self,e):
         global version
         # A message dialog box with an OK button. wx.OK is a standard ID in wxWidgets.
-        dlg = wx.MessageDialog( self, "A log parser for Final Fantasy XIV.\nRead more at http://ffxivbattle.com/\n\nVersion " + str(version), "About FFXIV Log Parser", wx.OK)
+        if self.japaneseMenu.IsChecked():
+            dlg = wx.MessageDialog( self, u"ファイナルファンタジーXIVのログパーサー。\nの続きを読む： http://ffxivbattle.com/\n\バージョン %s" % (str(version)), u"FFXIVのログパーサーについて", wx.OK)
+        else:
+            dlg = wx.MessageDialog( self, "A log parser for Final Fantasy XIV.\nRead more at http://ffxivbattle.com/\n\nVersion " + str(version), "About FFXIV Log Parser", wx.OK)
         dlg.ShowModal() # Show it
         dlg.Destroy() # finally destroy it when finished.
 
     def OnCheckVersion(self, e):
-        if versioncheck(status=1):
+        if self.japaneseMenu.IsChecked():
+            lang = "JP"
+        else:
+            lang = "EN"
+        if versioncheck(status=1, language=lang):
             Popen("setup.exe", shell=False) # start reloader
             self.OnExit(None)
             return
@@ -223,7 +285,7 @@ class MainFrame(wx.Frame):
     def OnStartCollecting(self, e):
         global guithread, configfile
         self.filemenu.Enable(1, False)
-        self.btnDialog.Disable()
+        self.btnStart.Disable()
         #try:
         config = ConfigParser.ConfigParser()
         try:
@@ -253,7 +315,7 @@ class MainFrame(wx.Frame):
             dlg.ShowModal() # Show it
             dlg.Destroy() # finally destroy it when finished.
             self.filemenu.Enable(1, True)
-            self.btnDialog.Enable()
+            self.btnStart.Enable()
             return
                 
         config.set('Config', 'logpath', self.control.GetValue())
@@ -274,8 +336,8 @@ class MainFrame(wx.Frame):
         if self:
             if self.filemenu:
                 self.filemenu.Enable(1, True)
-            if self.btnDialog:
-                self.btnDialog.Enable()
+            if self.btnStart:
+                self.btnStart.Enable()
         
     def OnClose(self, e):
         self.Destroy();
@@ -476,7 +538,7 @@ gatheringdata = []
 #uploaddata = []
 '''
 
-debuglevel = 2
+debuglevel = 0
 class ffxiv_parser:
     def __init__(self, language): 
         self.language = language
@@ -541,10 +603,12 @@ class ffxiv_parser:
             '57': self.parse_monstermiss,
             '58': self.parse_othermiss,
             '59': self.parse_othermiss,
+            '5A': self.parse_monstermiss,
             '5B': self.parse_othermiss,
             '5C': self.parse_absorb, #self casting?
             '5D': self.parse_recover, # party casting?
             '5E': self.parse_otherrecover, # other casting?
+            '5F': self.parse_otherrecover, # recover mp from monster
             '60': self.parse_monstereffect, # monster starts casting
             '61': self.parse_otherabilities,
             '62': self.parse_effect,
@@ -572,7 +636,12 @@ class ffxiv_parser:
 
     def getlogpartsalt(self, logitem):
         if (logitem.find(':') != -1):
-            code = logitem[:logitem.find(':')]            
+            code = logitem[:logitem.find(':')]
+            # trim the first char since it is likely a 0 that was written strangely
+            # if its longer than 3 then its likely a crlf on a log border so
+            # let it fall out
+            if len(code) > 2:
+                code = code[1:]
             logvalue = logitem[logitem.find(':') + 1:]
         else:
             raise ValueError
@@ -601,14 +670,14 @@ class ffxiv_parser:
         except ValueError:            
             try:
                 code, logvalue = self.getlogpartsalt(logitem)
-            except ValueError:
-                self.echo("Could not find code: " + logitem, 1)
+            except ValueError as e:
+                self.echo("Could not find code: %s, %s" % (logitem, e), 1)
                 return
         
         try:
             self.function_map[code](code, logvalue)
-        except KeyError:
-            self.echo("Could not parse code: " + code + " value: " + logvalue, 1)
+        except KeyError as e:
+            self.echo("Could not parse code: %s value: %s error: %s" % (code, logvalue, e), 1)
 
 class english_parser(ffxiv_parser):
     
@@ -1295,15 +1364,17 @@ class english_parser(ffxiv_parser):
             self.craftingcomplete = 0
         if logitem.find("You cannot change classes") != -1 or logitem.find("Levequest difficulty") != -1:
             return
-        if self.defeated and self.spset:
-            self.defeated = False
-            self.spset = False
-            self.printDamage(self.currentmonster)
-
-            self.currentmonster = copy.deepcopy(self.defaultmonster)
-            self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
-            self.currentmonster["monster"] = logitem[logitem.find("The ") +4:logitem.find(" is")]
-            self.currentmonster["monster"] = self.currentmonster["monster"].split('\'')[0]
+        #if self.defeated and self.spset:
+        #    self.defeated = False
+        #    self.spset = False
+        #    self.printDamage(self.currentmonster)
+        self.defeated = False
+        self.spset = False
+        self.expset = False
+        self.currentmonster = copy.deepcopy(self.defaultmonster)
+        self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+        self.currentmonster["monster"] = logitem[logitem.find("The ") +4:logitem.find(" is")]
+        self.currentmonster["monster"] = self.currentmonster["monster"].split('\'')[0]
         
     def parse_gathering(self, code, logitem):
         self.echo("othergathering " + logitem, 1)
@@ -1574,8 +1645,14 @@ class english_parser(ffxiv_parser):
                 self.currentcrafting["skillpoints"] = int(logitemparts[2])
                 self.currentcrafting["class"] = logitemparts[3]
                 self.spset = True
-        if self.expset and self.spset and self.defeated:
-            self.engaged(code, logitem)
+        if self.defeated and self.spset and self.expset:
+            self.defeated = False
+            self.spset = False
+            self.expset = False
+            self.printDamage(self.currentmonster)
+
+        #if and self.spset and self.defeated:
+        #    self.engaged(logitem)
         self.echo("spexpgain " + logitem, 1)
 
     def parse_genericmessage(self, code, logitem):
@@ -2289,14 +2366,17 @@ class japanese_parser(ffxiv_parser):
             self.craftingcomplete = 0
         if logitem.find("You cannot change classes") != -1 or logitem.find("Levequest difficulty") != -1:
             return
-        if self.defeated and self.spset:
-            self.defeated = False
-            self.spset = False
-            self.printDamage(self.currentmonster)
+        
+        self.defeated = False
+        self.spset = False
+        self.expset = False
 
-        if not self.defeated and not self.spset:
-            self.currentmonster = copy.deepcopy(self.defaultmonster)
-            self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+        self.currentmonster = copy.deepcopy(self.defaultmonster)
+        self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+        if logitem.find(u"の一群を占有した") != -1:
+            # this is a party engage
+            self.currentmonster["monster"] = logitem[:logitem.find(u"の一群を占有した")]
+        else:
             self.currentmonster["monster"] = logitem[:logitem.find(u"を占有した")]
         # no plural form
         #self.currentmonster["monster"] = self.currentmonster["monster"].split('\'')[0]
@@ -2424,8 +2504,6 @@ class japanese_parser(ffxiv_parser):
                 misschar = logitem[:logitem.find(u"は")]
                 attacktype = logitem[logitem.find(u"「") +1:logitem.find(u"」")]
                 self.currentmonster["othermiss"].append([misschar, attacktype])
-                print "Other Miss"
-                print self.currentmonster["othermiss"]
                 return
             elif attacker == self.currentmonster["monster"]:
                 self.parse_monstermiss(code, logitem)
@@ -2586,7 +2664,7 @@ class japanese_parser(ffxiv_parser):
             self.currentmonster["exp"] = int(points)
             self.currentcrafting["exp"] = int(points)
             self.expset = True
-            return
+
         elif logitem.find(u"修錬") != -1:
             sp = logitem[logitem.find(u"値") + 1:logitem.find(u"を得")]
             self.currentmonster["skillpoints"] = int(sp)
@@ -2594,9 +2672,12 @@ class japanese_parser(ffxiv_parser):
             self.currentcrafting["skillpoints"] = int(sp)
             self.currentcrafting["class"] = logitem[logitem.find(u"「") + 1:logitem.find(u"」")]
             self.spset = True
-            return
-        if self.expset and self.spset and self.defeated:
-            self.engaged(code, logitem)
+
+        if self.defeated and self.spset and self.expset:
+            self.defeated = False
+            self.spset = False
+            self.expset = False
+            self.printDamage(self.currentmonster)
 
         self.echo("spexpgain " + logitem, 1)
 
@@ -2694,8 +2775,6 @@ def printDamage(currentmonster):
             hitpercent = (100 - hitpercent)
         print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nExp: %i\nSkill Points: %i\nDate Time: %s\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
         monsterdata.append(currentmonster)
-        #if len(monsterdata) > 20:
-        #    uploadToDB()
 
 
 def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, password=""):
@@ -2791,16 +2870,14 @@ def doUpload(jsondata):
         values = {'jsondata' : jsondata }
         headers = { 'User-Agent' : "H3lls Log Parser v 1.9",
             'Content-Type': 'text/plain; charset=utf-8' }
-        #data = unicode(jsondata, 'utf-8')
-        #print data
         req = urllib2.Request(url, jsondata, headers)
         response = urllib2.urlopen(req)
         jsonresults = response.read()
         #print jsonresults
         return json.loads(jsonresults)
     except Exception, e:
+        traceback.print_exc()
         print "There was a problem uploading your data."
-        print e
 
 def doAppUpdate():
     try:
@@ -2828,29 +2905,42 @@ def doAppUpdate():
     except Exception, e:
         return 0
 
-def versioncheck(status=0):
+def versioncheck(status=0, language="EN"):
     response = None
     try:
         response = urllib2.urlopen('http://ffxivbattle.com/logparserversion-2.php');
     except:
         # There was a problem reading the version page skip it.
-        print "Unable to read the remote version number."
+        if language=="JP":
+            print u"リモートのバージョン番号を読み取ることができません。"
+        else:
+            print "Unable to read the remote version number."
         return 0
     try:
         #print response.read()
         versiondata = json.loads(response.read())
         if versiondata["version"] > version:
-            verdialog = wx.MessageDialog(None, 'A new version is available would you like to download and install it?\r\nChanges: \r\n%s' % (versiondata["changetext"]), 'Version %d Available' % (versiondata["version"]), 
-            wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
+            if language=="JP":
+                verdialog = wx.MessageDialog(None, u'新しいバージョンでは、ダウンロードし、インストールすることをご希望の利用可能ですか？\r\n変更: \r\n%s' % (versiondata["changetext"]), u'バージョン %d 対応' % (versiondata["version"]), 
+                    wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
+            else:
+                verdialog = wx.MessageDialog(None, 'A new version is available would you like to download and install it?\r\nChanges: \r\n%s' % (versiondata["changetext"]), 'Version %d Available' % (versiondata["version"]), 
+                    wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
             if verdialog.ShowModal() == wx.ID_YES:
                 return doAppUpdate()
         elif status:
-            okdlg = wx.MessageDialog(None, 'You are currently running the latest version.', 'Latest Version', wx.OK)
+            if language=="JP":
+                okdlg = wx.MessageDialog(None, u'現在、最新のバージョンを実行している。', u'最新バージョン', wx.OK)
+            else:
+                okdlg = wx.MessageDialog(None, 'You are currently running the latest version.', 'Latest Version', wx.OK)
             okdlg.ShowModal()
     except ValueError, e:
         # The result was garbage so skip it.
-        print e
-        print "Did not understand the remote version number."
+        traceback.print_exc()
+        if language=="JP":
+            print u"リモートのバージョン番号を理解していないか。"
+        else:
+            print "Did not understand the remote version number."
         return 0
     return 0
 
