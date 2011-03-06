@@ -2868,8 +2868,8 @@ def uploadToDB(password="", parsers=[]):
         else:
             response = "YES"
         if response == "" or response.upper() == "Y" or response.upper() == "YES":
-            url = doUpload(jsondata)
             if len(parser.monsterdata) > 0:
+                url = doUpload(jsondata)
                 if parser.getlanguage() == "jp":
                     print u"\n合計グローバルバトルレコード: %s" % url["totalbattlerecords"]
                     print u"合計新キャラクター死亡: %s" % url["deaths"]
@@ -2909,7 +2909,7 @@ def doUpload(jsondata):
         req = urllib2.Request(url, jsondata, headers)
         response = urllib2.urlopen(req)
         jsonresults = response.read()
-        print jsonresults
+        #print jsonresults
         return json.loads(jsonresults)
     except Exception as e:
         print "There was a problem uploading your data."
