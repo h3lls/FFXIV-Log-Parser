@@ -2,6 +2,44 @@
 # encoding: utf-8
 # -*- coding: utf-8 -*-
 
+'''
+
+Copyright (C) 2010-2011 FFXIVBattle.com
+All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and 
+associated documentation files (the "Log Parser"), to deal in the Software without restriction, 
+including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, 
+and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do 
+so, subject to the following conditions:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions, 
+and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions 
+and the following disclaimer in the documentation and/or other materials provided with the distribution, 
+and in the same place and form as other copyright, license and disclaimer information.
+
+3. The end-user documentation included with the redistribution, if any, must include the following acknowledgment: 
+
+"This product includes software developed by FFXIVBattle.com (http://www.ffxivbattle.com/) and its contributors", 
+
+in the same place and form as other third-party acknowledgments. Alternately, this acknowledgment may appear in 
+the software itself, in the same form and location as other such third-party acknowledgments.
+
+4. Except as contained in this notice, the name of FFXIVBattle.com shall not be used in advertising or otherwise 
+to promote the sale, use or other dealings in this Software without prior written authorization from FFXIVBattle.com.
+
+THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, 
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT 
+SHALL FFXIVBATTLE.COM OR ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, 
+OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS 
+OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER 
+IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE 
+USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+'''
+
 import traceback
 
 import hashlib
@@ -18,14 +56,31 @@ import json
 import urllib
 import urllib2
 import uuid
+import shutil
+
 from subprocess import Popen
 try:
     from agw import hyperlink as hl
 except ImportError: # if it's not there locally, try the wxPython lib.
     import wx.lib.agw.hyperlink as hl
 
-configfile = 'logparser.cfg'
-version = 3.0
+# for installations that already have a config move the file to the config directory
+try:
+    if os.path.exists('logparser.cfg'):
+        if os.path.exists('config/'):
+            shutil.move('logparser.cfg', 'config/logparser.cfg')
+except:
+    pass
+
+# check to see if the config subdir exists and if the root logparser.cfg does
+# not exist.  This is so when there is a problem moving the existing config it
+# won't skip it.
+if os.path.exists('config/') and not os.path.exists('logparser.cfg'):
+    configfile = 'config/logparser.cfg'
+else:
+    configfile = 'logparser.cfg'
+
+version = 3.1
 charactername = ""
 doloop = 0
 
@@ -56,6 +111,20 @@ class PasswordDialog(wx.Dialog):
 
         
 class MainFrame(wx.Frame):
+    def SaveLanguageSetting(self, lang):
+        global configfile
+
+        config = ConfigParser.ConfigParser()
+        try:
+            config.add_section('Config')
+        except ConfigParser.DuplicateSectionError:
+            pass
+        config.read(configfile)
+        
+        config.set('Config', 'language', lang)
+        with open(configfile, 'wb') as openconfigfile:
+            config.write(openconfigfile)
+
     def SetEnglish(self, event):
         self.SetTitle("FFXIV Log Parser")
         self.filemenu.SetLabel(1, "&Start")
@@ -75,6 +144,7 @@ class MainFrame(wx.Frame):
         self.charlink.SetLabel("test")
         self.charlink.SetLabel("FFXIVBattle.com Character Page")
         self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=%s&lang=en" % (self.charname.GetValue()))
+        self.SaveLanguageSetting('en')
 
     def SetJapanese(self, event):
         self.SetTitle(u"FFXIVのログパーサー")
@@ -94,10 +164,15 @@ class MainFrame(wx.Frame):
         self.lblLogWindow.SetLabel(u"アクティビティログ")
         self.charlink.SetLabel(u"FFXIVBattle.com文字ページ")
         self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=%s&lang=jp" % (self.charname.GetValue()))
+        self.SaveLanguageSetting('jp')
 
     def __init__(self, parent, title):
         global configfile
         wx.Frame.__init__(self, parent, title=title, size=(400,314))
+        try:
+            self.SetIcon(wx.Icon("icon.ico", wx.BITMAP_TYPE_ICO))
+        except Exception as e:
+            print e
         self.Bind(wx.EVT_CLOSE, self.OnClose)
         self.sb = self.CreateStatusBar() # A Statusbar in the bottom of the window
 
@@ -130,21 +205,18 @@ class MainFrame(wx.Frame):
         self.menuBar.Append(self.languagemenu,"&Language") # Adding the "filemenu" to the MenuBar
         self.SetMenuBar(self.menuBar)  # Adding the MenuBar to the Frame content.
 
-        self.languagemenu.Check(11, True)
-
         panel = wx.Panel(self, -1)
         logpath = ""
         charactername = hex(uuid.getnode())
         # read defaults
+        config = ConfigParser.ConfigParser()
         try:
-            config = ConfigParser.ConfigParser()
             config.read(configfile)
             logpath = config.get('Config', 'logpath')
             charactername = config.get('Config', 'charactername')
         except:
             logpath = ""
             pass
-
         if logpath == "":
             userdir = os.path.expanduser('~')
             logpath = os.path.join(userdir, "Documents\\My Games\\FINAL FANTASY XIV\\user\\") 
@@ -184,6 +256,14 @@ class MainFrame(wx.Frame):
         redir=RedirectText(self.logWindow)
         self.charlink = hl.HyperLinkCtrl(panel, -1, "FFXIVBattle.com Character Page", (5,216), (22, 80))
         self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=" + charactername)
+
+        try:
+            configlang = config.get('Config', 'language')
+            if configlang == 'jp':
+                self.languagemenu.Check(12, True)
+                self.SetJapanese(None)
+        except:
+            pass
 
         sys.stdout=redir
         self.Show(True)
@@ -264,13 +344,36 @@ class MainFrame(wx.Frame):
 
     def OnAbout(self,e):
         global version
-        # A message dialog box with an OK button. wx.OK is a standard ID in wxWidgets.
+        
+        license = '''Copyright (C) 2010-2011 FFXIVBattle.com All rights reserved.
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Log Parser"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions, and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution, and in the same place and form as other copyright, license and disclaimer information.
+
+3. The end-user documentation included with the redistribution, if any, must include the following acknowledgment: "This product includes software developed by FFXIVBattle.com (http://www.ffxivbattle.com/) and its contributors", in the same place and form as other third-party acknowledgments. Alternately, this acknowledgment may appear in the software itself, in the same form and location as other such third-party acknowledgments.
+
+4. Except as contained in this notice, the name of FFXIVBattle.com shall not be used in advertising or otherwise to promote the sale, use or other dealings in this Software without prior written authorization from FFXIVBattle.com.
+
+THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL FFXIVBATTLE.COM OR ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+                        '''
+        info = wx.AboutDialogInfo()
+        info.SetName('FFXIV Log Parser')
+        info.SetVersion(str(version))
         if self.japaneseMenu.IsChecked():
-            dlg = wx.MessageDialog( self, u"ファイナルファンタジーXIVのログパーサー。\nの続きを読む： http://ffxivbattle.com/\n\バージョン %s" % (str(version)), u"FFXIVのログパーサーについて", wx.OK)
+            info.SetDescription(u"ファイナルファンタジーXIVのログパーサー。")
+            info.AddTranslator(u'H3lls (ffxivbattle@gmail.com) ご了承ください、私は翻訳の間違いをしたなら、私に知らせてください。')
         else:
-            dlg = wx.MessageDialog( self, "A log parser for Final Fantasy XIV.\nRead more at http://ffxivbattle.com/\n\nVersion " + str(version), "About FFXIV Log Parser", wx.OK)
-        dlg.ShowModal() # Show it
-        dlg.Destroy() # finally destroy it when finished.
+            info.SetDescription("A log parser for Final Fantasy XIV.")
+            info.AddTranslator('H3lls (ffxivbattle@gmail.com) PLEASE let me know if I have made any mistakes in translation.')
+        info.SetIcon(wx.Icon('icon.ico',wx.BITMAP_TYPE_ICO))
+        info.SetCopyright('(C) 2011 ffxivbattle.com')
+        info.SetWebSite('http://www.ffxivbattle.com')
+        info.SetLicence(license)
+        info.AddDeveloper('H3lls (ffxivbattle@gmail.com)')
+
+        wx.AboutBox(info)
 
     def OnCheckVersion(self, e):
         if self.japaneseMenu.IsChecked():
@@ -293,6 +396,7 @@ class MainFrame(wx.Frame):
         except ConfigParser.DuplicateSectionError:
             pass
         config.read(configfile)
+        
         # extract salt from the dir
         dirparts = self.control.GetValue().split("\\")
         # set the salt to the users directory name for the character.  Not 100% but good enough to salt with.
@@ -320,8 +424,8 @@ class MainFrame(wx.Frame):
                 
         config.set('Config', 'logpath', self.control.GetValue())
         config.set('Config', 'charactername', self.charname.GetValue())
-        with open(configfile, 'wb') as configfile:
-            config.write(configfile)
+        with open(configfile, 'wb') as openconfigfile:
+            config.write(openconfigfile)
         #except (Exception, e):
         #    print e
         try:
@@ -357,7 +461,7 @@ class RedirectText(object):
 
     def write(self,string):
         try:
-            self.out.WriteText(string)
+            self.out.AppendText(string)
         except:
             pass
 
@@ -1303,16 +1407,16 @@ class english_parser(ffxiv_parser):
             if currentmonster["miss"] > 0:
                 hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
                 hitpercent = (100 - hitpercent)
-            print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nExp: %i\nSkill Points: %i\nDate Time: %s\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
+            print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
             self.monsterdata.append(currentmonster)
             #if len(monsterdata) > 20:
             #    uploadToDB()
 
     def useitem(self, logitem):
         if self.craftingcomplete == 1:
-            printCrafting(self.currentcrafting)
+            self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
-            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
             self.craftingcomplete = 0
         if logitem.find("Standard Synthesis") != -1:
             # store previous value if valid:
@@ -1360,19 +1464,15 @@ class english_parser(ffxiv_parser):
         if self.craftingcomplete == 1:
             self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
-            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
             self.craftingcomplete = 0
         if logitem.find("You cannot change classes") != -1 or logitem.find("Levequest difficulty") != -1:
             return
-        #if self.defeated and self.spset:
-        #    self.defeated = False
-        #    self.spset = False
-        #    self.printDamage(self.currentmonster)
         self.defeated = False
         self.spset = False
         self.expset = False
         self.currentmonster = copy.deepcopy(self.defaultmonster)
-        self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+        self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
         self.currentmonster["monster"] = logitem[logitem.find("The ") +4:logitem.find(" is")]
         self.currentmonster["monster"] = self.currentmonster["monster"].split('\'')[0]
         
@@ -1608,15 +1708,15 @@ class english_parser(ffxiv_parser):
 
     def parse_defeated(self, code, logitem):
         if self.craftingcomplete == 1:
-            printCrafting(self.currentcrafting)
+            self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
-            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
             self.craftingcomplete = 0
         if logitem.find("group") != -1:
             return
         if logitem.find("defeats you") != -1:
             # You were killed...
-            self.characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime)), "class":self.currentmonster["class"]})
+            self.characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "class":self.currentmonster["class"]})
             #0045::The fat dodo defeats you.
             return
         if logitem.find("defeat") != -1:
@@ -2305,16 +2405,16 @@ class japanese_parser(ffxiv_parser):
             if currentmonster["miss"] > 0:
                 hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
                 hitpercent = (100 - hitpercent)
-            print u"敗北 %s ⇒ %s\nヒット %%: %i%%\n合計平均ダメージ: %i\nクリティカルの平均ダメージ: %i\nレギュラーの平均被害: %i\n合計ダメージ平均を撮影ヒット: %i\nクリティカルヒットのダメージの平均: %i\nダメージ平均ヒット: %i\nその他から合計ダメージ: %i\n経験値: %i\n修錬値: %i\n日付時刻: %s\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
+            print u"敗北 %s ⇒ %s\nヒット %%: %i%%\n合計平均ダメージ: %i\nクリティカルの平均ダメージ: %i\nレギュラーの平均被害: %i\n合計ダメージ平均を撮影ヒット: %i\nクリティカルヒットのダメージの平均: %i\nダメージ平均ヒット: %i\nその他から合計ダメージ: %i\n経験値: %i\n修錬値: %i\n日付時刻: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
             self.monsterdata.append(currentmonster)
             #if len(monsterdata) > 20:
             #    uploadToDB()
 
     def useitem(self, logitem):
         if self.craftingcomplete == 1:
-            printCrafting(self.currentcrafting)
+            self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
-            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
             self.craftingcomplete = 0
         if logitem.find("Standard Synthesis") != -1:
             # store previous value if valid:
@@ -2362,7 +2462,7 @@ class japanese_parser(ffxiv_parser):
         if self.craftingcomplete == 1:
             self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
-            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
             self.craftingcomplete = 0
         if logitem.find("You cannot change classes") != -1 or logitem.find("Levequest difficulty") != -1:
             return
@@ -2372,7 +2472,7 @@ class japanese_parser(ffxiv_parser):
         self.expset = False
 
         self.currentmonster = copy.deepcopy(self.defaultmonster)
-        self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+        self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
         if logitem.find(u"の一群を占有した") != -1:
             # this is a party engage
             self.currentmonster["monster"] = logitem[:logitem.find(u"の一群を占有した")]
@@ -2638,15 +2738,15 @@ class japanese_parser(ffxiv_parser):
 
     def parse_defeated(self, code, logitem):
         if self.craftingcomplete == 1:
-            printCrafting(self.currentcrafting)
+            self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
-            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime))
+            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
             self.craftingcomplete = 0
         if logitem.find(u"一群") != -1:
             return
         if logitem.find("defeats you") != -1:
             # You were killed...
-            self.characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.localtime(self.logfiletime)), "class":self.currentmonster["class"]})
+            self.characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "class":self.currentmonster["class"]})
             #0045::The fat dodo defeats you.
             return
         if logitem.find(u"を倒した。") != -1:
@@ -2711,72 +2811,6 @@ class japanese_parser(ffxiv_parser):
         self.echo("generic " + logitem, 1)
 
 
-def printCrafting(currentcrafting):
-    global craftingdata
-    #print currentcrafting
-    #raw_input("")
-    return
-
-def printDamage(currentmonster):
-    global monsterdata
-
-    if len(currentmonster["damage"]) > 0:
-        hitpercent = 100
-        criticalavg = 0
-        criticalavgcount = 0
-        regularavg = 0
-        regularavgcount = 0
-        criticaldmgavg = 0
-        regulardmgavg = 0
-        totaldmgavg = 0
-        hitdmgavg = 0
-        hitdmgavgcount = 0
-        crithitdmgavg = 0
-        crithitdmgavgcount = 0
-        totalhitdmgavg = 0
-        othertotaldmg = 0
-        for otherdamage in currentmonster["otherdamage"]:
-            if otherdamage[0] == '':
-                continue
-            othertotaldmg += int(otherdamage[0])
-        for hitdamage in currentmonster["hitdamage"]:
-            if hitdamage[0] == '':
-                continue
-            if hitdamage[1] == True:
-                crithitdmgavg = crithitdmgavg + int(hitdamage[0])
-                crithitdmgavgcount = crithitdmgavgcount + 1
-            else:
-                hitdmgavg = hitdmgavg + int(hitdamage[0])
-                hitdmgavgcount = hitdmgavgcount + 1
-
-        for damage in currentmonster["damage"]:
-            if damage[0] == '':
-                continue
-            if damage[1] == True:
-                criticalavg = criticalavg + int(damage[0])
-                criticalavgcount = criticalavgcount + 1
-            else:
-                regularavg = regularavg + int(damage[0])
-                regularavgcount = regularavgcount + 1
-        if crithitdmgavg != 0:
-            crithitdmgavg = crithitdmgavg / crithitdmgavgcount
-        if hitdmgavg != 0:
-            hitdmgavg = hitdmgavg / hitdmgavgcount
-        if crithitdmgavg + hitdmgavg != 0:
-            totalhitdmgavg = (crithitdmgavg + hitdmgavg) / (crithitdmgavgcount + hitdmgavgcount)
-        if criticalavg != 0:
-            criticaldmgavg = criticalavg / criticalavgcount
-        if regularavg != 0:
-            regulardmgavg = regularavg / regularavgcount
-        if criticalavg + regularavg != 0:
-            totaldmgavg = (criticalavg + regularavg) / (criticalavgcount + regularavgcount)
-        if currentmonster["miss"] > 0:
-            hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
-            hitpercent = (100 - hitpercent)
-        print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nExp: %i\nSkill Points: %i\nDate Time: %s\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
-        monsterdata.append(currentmonster)
-
-
 def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, password=""):
     en_parser = english_parser()
     jp_parser = japanese_parser()
@@ -2809,6 +2843,7 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
                 continue
         finally:            
             logfile.close()
+    # uncomment for debugging 
     #return
     uploadToDB(password, [en_parser, jp_parser])
 
@@ -2834,24 +2869,25 @@ def uploadToDB(password="", parsers=[]):
             response = "YES"
         if response == "" or response.upper() == "Y" or response.upper() == "YES":
             url = doUpload(jsondata)
-            if parser.getlanguage() == "jp":
-                print u"\n合計グローバルバトルレコード: %s" % url["totalbattlerecords"]
-                print u"合計新キャラクター死亡: %s" % url["deaths"]
-                print u"レコード送信（無視される重複）: %s" % url["recordsimported"]
-                print u"ウェブサイトにアップロードされたレコード: %s" % url["updatedrecords"]
-                if int(url["updatedrecords"]) > 0:
-                    print u"\nあなたのデータはあなたがそれを見ることができる、アップロードされています： \n\n%s" % url["url"] 
-                else:
-                    print u"\nいいえ、新しいレコード。あなたはあなたのデータを表示することができます： \n\n%s\n" % url["url"] 
-            elif parser.getlanguage() == "en":
-                print "\nTotal Global Battle Records: %s" % url["totalbattlerecords"]
-                print "Total New Character Deaths: %s" % url["deaths"]
-                print "Records Sent (Duplicates ignored): %s" % url["recordsimported"]
-                print "Records Uploaded To Website: %s" % url["updatedrecords"]
-                if int(url["updatedrecords"]) > 0:
-                    print "\nYour data has been uploaded, you can view it at: \n\n%s" % url["url"] 
-                else:
-                    print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"]                 
+            if len(parser.monsterdata) > 0:
+                if parser.getlanguage() == "jp":
+                    print u"\n合計グローバルバトルレコード: %s" % url["totalbattlerecords"]
+                    print u"合計新キャラクター死亡: %s" % url["deaths"]
+                    print u"レコード送信（無視される重複）: %s" % url["recordsimported"]
+                    print u"ウェブサイトにアップロードされたレコード: %s" % url["updatedrecords"]
+                    if int(url["updatedrecords"]) > 0:
+                        print u"\nあなたのデータはあなたがそれを見ることができる、アップロードされています： \n\n%s" % url["url"] 
+                    else:
+                        print u"\nいいえ、新しいレコード。あなたはあなたのデータを表示することができます： \n\n%s\n" % url["url"] 
+                elif parser.getlanguage() == "en":
+                    print "\nTotal Global Battle Records: %s" % url["totalbattlerecords"]
+                    print "Total New Character Deaths: %s" % url["deaths"]
+                    print "Records Sent (Duplicates ignored): %s" % url["recordsimported"]
+                    print "Records Uploaded To Website: %s" % url["updatedrecords"]
+                    if int(url["updatedrecords"]) > 0:
+                        print "\nYour data has been uploaded, you can view it at: \n\n%s" % url["url"] 
+                    else:
+                        print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"]                 
         else:
             if parser.getlanguage() == "jp":
                 print "Your data will not be sent."
@@ -2868,16 +2904,16 @@ def doUpload(jsondata):
         url = 'http://ffxivbattle.com/postlog.php'
         user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
         values = {'jsondata' : jsondata }
-        headers = { 'User-Agent' : "H3lls Log Parser v 1.9",
+        headers = { 'User-Agent' : "H3lls Log Parser v %s" % (str(version)),
             'Content-Type': 'text/plain; charset=utf-8' }
         req = urllib2.Request(url, jsondata, headers)
         response = urllib2.urlopen(req)
         jsonresults = response.read()
-        #print jsonresults
+        print jsonresults
         return json.loads(jsonresults)
-    except Exception, e:
-        traceback.print_exc()
+    except Exception as e:
         print "There was a problem uploading your data."
+        print e
 
 def doAppUpdate():
     try:

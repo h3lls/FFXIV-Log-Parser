@@ -10,4 +10,4 @@ setup(
         name = "FFXIVLogParser",
         version = "3.0",
         description = "FFXIV Log Parser",
-        executables = [Executable("logparse.py", base = base)])
+        executables = [Executable("logparse.py", base = base, compress = True, icon="icon.ico")])
