@@ -7,23 +7,25 @@ There is no unique ID for each monster being attacked. This proves quite trouble
 The log format does not include damage due to damage over time. Because of this you will not see the total damage being done to you or the monster if a DOT is used.
 The data gathered by the log viewer is reduced to just a small fraction of the overall log. An example output of a log entry being sent would be:
 
+The website to browse your log data can be found at: http://www.ffxivbattle.com/
+
 ### Example Data ###
 
-[{
-"monster": "curious galago",
-"othermiss": [["That Char", "Heavy Strike"], ["Some Other", "Light Shot"], 
-"otherhitdamage": [["51", 0, "Bleat", "Some Other"]], 
-"othermonstermiss": 0, 
-"damage": [["219", 0, "Light Shot"], ["205", 0, "Light Shot"]], 
-"datetime": "02/21/11 02:36:56", 
-"skillpoints": 331, 
-"exp": 551, 
-"hitdamage": [["423", 0, "Head Butt"]], 
-"monstermiss": 0, 
-"miss": 0, 
-"class": "archery", 
-"otherdamage": [["202", 0, "Aura Pulse", "Some Other"], ["21", 1, "Light Slash", "That Char"]]
-}]
+    [{
+    "monster": "curious galago",
+    "othermiss": [["That Char", "Heavy Strike"], ["Some Other", "Light Shot"], 
+    "otherhitdamage": [["51", 0, "Bleat", "Some Other"]], 
+    "othermonstermiss": 0, 
+    "damage": [["219", 0, "Light Shot"], ["205", 0, "Light Shot"]], 
+    "datetime": "02/21/11 02:36:56", 
+    "skillpoints": 331, 
+    "exp": 551, 
+    "hitdamage": [["423", 0, "Head Butt"]], 
+    "monstermiss": 0, 
+    "miss": 0, 
+    "class": "archery", 
+    "otherdamage": [["202", 0, "Aura Pulse", "Some Other"], ["21", 1, "Light Slash", "That Char"]]
+    }]
 
 Below we discuss what each of these are and how they are used.
 
@@ -85,3 +87,47 @@ party - Party chat logs.
 Examples of FilterByMonster: "ice elemental" "fat dodo" "warf rat"
 if you are running the executable version an example would be:
 logparse.exe "c:\Users\\Documents\My Games\Final Fantasy XIV\user\\log\" battle false
+
+# Developers (fellow log parsers) #
+
+## Reading Binary Headers ##
+
+There are a number of things this log parser does that handles just about every type of entry that the logs
+output. Changes in the 3.2 version of the log parser introduced parsing of the binary header data to get the 
+offsets. This offers a dramatic improvement on the quality of the output since it always knows the length of
+the lines being parsed.  The important part of this is the actual reading of the header:
+
+    logfile = open(logfilename, 'rb')
+    # read in the length of this files records
+    headerparts = struct.unpack("2l", logfile.read(8))
+    headerlen = headerparts[1] - headerparts[0]
+    header = struct.unpack(str(headerlen)+"l", logfile.read(headerlen*4))
+    # header * 4 bytes for each and another 8 bytes for the header size
+    offset = headerlen*4+8
+    for headerpos in range(len(header)):
+        if headerpos == 0:
+            startbyte = offset
+            endbyte = header[headerpos]
+        else:
+            startbyte = offset + header[headerpos-1]
+            endbyte = header[headerpos] - header[headerpos-1]
+        logfile.seek(startbyte)
+        logitem = logfile.read(endbyte)[2:]
+
+Using the struct import makes this a quick process to read the headers and loop through each log entry.  Once
+it has been read it passes it to all available language parsers to interprit since there isn't a specific language
+defined when the app starts up it has to assume every line is in any possible language.  From here it hits the
+function_map which takes the code and maps it to a function call. Several of the function calls are ignored but all
+are defined so if someone wants to know what each type of log entry does this is a great starting point. Eventually
+all of the log types will be handled but for the statistics I am gathering this is good enough for now.
+
+## Auto-Translate ##
+
+The auto-translate functionality attempts to convert the binary values in the logs for auto-translate into actual 
+text values.  In english this is 99% complete but needs to be moved to a binary file to make for a smaller parser
+and to improve the parsing times.  It still is quite fast even with the conversion of the binary values and checking
+but could be much better. The goal is to eventually have a reference for every language and output auto-translate 
+values but this is a labor intensive process.  To do the conversion I type in game the auto-tranlate value in chat
+parse that log line along with the value displayed in chat.  Then I add the binary value starting with 0x022E along
+with the actual text into an array.  It would be much better to be able to parse out the values from a resource
+file in game but I haven't found where they store these translations so for now it is a manual process.
