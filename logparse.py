@@ -57,6 +57,7 @@ import urllib
 import urllib2
 import uuid
 import shutil
+import struct
 
 from subprocess import Popen
 try:
@@ -80,7 +81,7 @@ if os.path.exists('config/') and not os.path.exists('logparser.cfg'):
 else:
     configfile = 'logparser.cfg'
 
-version = 3.1
+version = 3.2
 charactername = ""
 doloop = 0
 
@@ -2821,10 +2822,23 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
             logfiletime = os.stat(logfilename).st_mtime
             en_parser.setLogFileTime(logfiletime)
             jp_parser.setLogFileTime(logfiletime)
-            logfile = open(logfilename, 'r')
-            logdata = logfile.read()
-            logdata = logdata.split("00")
-            for logitem in logdata[1:]:
+            logfile = open(logfilename, 'rb')
+            # read in the length of this files records
+            headerparts = struct.unpack("2l", logfile.read(8))
+            headerlen = headerparts[1] - headerparts[0]
+            header = struct.unpack(str(headerlen)+"l", logfile.read(headerlen*4))
+            # header * 4 bytes for each and another 8 bytes for the header size
+            offset = headerlen*4+8
+            for headerpos in range(len(header)):
+                if headerpos == 0:
+                    startbyte = offset
+                    endbyte = header[headerpos]
+                else:
+                    startbyte = offset + header[headerpos-1]
+                    endbyte = header[headerpos] - header[headerpos-1]
+                logfile.seek(startbyte)
+                logitem = logfile.read(endbyte)[2:]
+            
                 try:
                     en_parser.parse_line(unicode(logitem, 'utf-8', errors='replace'))
                 except UnicodeDecodeError:
@@ -2909,7 +2923,6 @@ def doUpload(jsondata):
         req = urllib2.Request(url, jsondata, headers)
         response = urllib2.urlopen(req)
         jsonresults = response.read()
-        #print jsonresults
         return json.loads(jsonresults)
     except Exception as e:
         print "There was a problem uploading your data."
