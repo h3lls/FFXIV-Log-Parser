@@ -116,7 +116,7 @@ the lines being parsed.  The important part of this is the actual reading of the
         logitem = logfile.read(endbyte)[2:]
 
 Using the struct import makes this a quick process to read the headers and loop through each log entry.  Once
-it has been read it passes it to all available language parsers to interprit since there isn't a specific language
+it has been read it passes it to all available language parsers to interpret since there isn't a specific language
 defined when the app starts up it has to assume every line is in any possible language.  From here it hits the
 function_map which takes the code and maps it to a function call. Several of the function calls are ignored but all
 are defined so if someone wants to know what each type of log entry does this is a great starting point. Eventually
@@ -125,10 +125,10 @@ all of the log types will be handled but for the statistics I am gathering this 
 ## Auto-Translate ##
 
 The auto-translate functionality attempts to convert the binary values in the logs for auto-translate into actual 
-text values.  In english this is 99% complete but needs to be moved to a binary file to make for a smaller parser
+text values.  In English this is 99% complete but needs to be moved to a binary file to make for a smaller parser
 and to improve the parsing times.  It still is quite fast even with the conversion of the binary values and checking
 but could be much better. The goal is to eventually have a reference for every language and output auto-translate 
-values but this is a labor intensive process.  To do the conversion I type in game the auto-tranlate value in chat
+values but this is a labor intensive process.  To do the conversion I type in game the auto-translate value in chat
 parse that log line along with the value displayed in chat.  Then I add the binary value starting with 0x022E along
 with the actual text into an array.  It would be much better to be able to parse out the values from a resource
 file in game but I haven't found where they store these translations so for now it is a manual process.
