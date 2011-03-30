@@ -98,6 +98,7 @@ output. Changes in the 3.2 version of the log parser introduced parsing of the b
 offsets. This offers a dramatic improvement on the quality of the output since it always knows the length of
 the lines being parsed.  The important part of this is the actual reading of the header:
 
+https://gist.github.com/893979
 <script src="https://gist.github.com/893979.js"> </script>
 
 Using the struct import makes this a quick process to read the headers and loop through each log entry.  Once
