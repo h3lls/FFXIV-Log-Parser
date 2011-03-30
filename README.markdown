@@ -73,19 +73,20 @@ will spit out the raw data to your screen.
 
 ### Command Line Parameters ###
 
-Usage:
-CharacterName PathToLogFiles LogDataType RunForever[True/False] FilterByMonster[optional]
-Example: 
-python logparse.py "c:\Users\\Documents\My Games\Final Fantasy XIV\user\\log\" battle false
-Available LogDataTypes:
-battle - view battle logs.
-chat - all chat logs.
-linkshell - linkshell chat logs.
-say - say chat logs.
-party - Party chat logs.
+    Usage:
+    CharacterName PathToLogFiles LogDataType RunForever[True/False] FilterByMonster[optional]
+    Example: 
+    python logparse.py "c:\Users\\Documents\My Games\Final Fantasy XIV\user\\log\" battle false
+    Available LogDataTypes:
+    battle - view battle logs.
+    chat - all chat logs.
+    linkshell - linkshell chat logs.
+    say - say chat logs.
+    party - Party chat logs.
 
 Examples of FilterByMonster: "ice elemental" "fat dodo" "warf rat"
 if you are running the executable version an example would be:
+
 logparse.exe "c:\Users\\Documents\My Games\Final Fantasy XIV\user\\log\" battle false
 
 # Developers (fellow log parsers) #
@@ -97,22 +98,23 @@ output. Changes in the 3.2 version of the log parser introduced parsing of the b
 offsets. This offers a dramatic improvement on the quality of the output since it always knows the length of
 the lines being parsed.  The important part of this is the actual reading of the header:
 
-    logfile = open(logfilename, 'rb')
-    # read in the length of this files records
-    headerparts = struct.unpack("2l", logfile.read(8))
-    headerlen = headerparts[1] - headerparts[0]
-    header = struct.unpack(str(headerlen)+"l", logfile.read(headerlen*4))
-    # header * 4 bytes for each and another 8 bytes for the header size
-    offset = headerlen*4+8
-    for headerpos in range(len(header)):
-        if headerpos == 0:
-            startbyte = offset
-            endbyte = header[headerpos]
-        else:
-            startbyte = offset + header[headerpos-1]
-            endbyte = header[headerpos] - header[headerpos-1]
-        logfile.seek(startbyte)
-        logitem = logfile.read(endbyte)[2:]
+<!-- HTML generated using hilite.me --><div style="background: #111111; overflow:auto;width:auto;color:white;background:black;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%">    <span style="color: #ffffff">logfile</span> <span style="color: #ffffff">=</span> <span style="color: #ffffff">open(logfilename,</span> <span style="color: #0086d2">&#39;rb&#39;</span><span style="color: #ffffff">)</span>
+    <span style="color: #008800; font-style: italic; background-color: #0f140f"># read in the length of this files records</span>
+    <span style="color: #ffffff">headerparts</span> <span style="color: #ffffff">=</span> <span style="color: #ffffff">struct.unpack(</span><span style="color: #0086d2">&quot;2l&quot;</span><span style="color: #ffffff">,</span> <span style="color: #ffffff">logfile.read(</span><span style="color: #0086f7; font-weight: bold">8</span><span style="color: #ffffff">))</span>
+    <span style="color: #ffffff">headerlen</span> <span style="color: #ffffff">=</span> <span style="color: #ffffff">headerparts[</span><span style="color: #0086f7; font-weight: bold">1</span><span style="color: #ffffff">]</span> <span style="color: #ffffff">-</span> <span style="color: #ffffff">headerparts[</span><span style="color: #0086f7; font-weight: bold">0</span><span style="color: #ffffff">]</span>
+    <span style="color: #ffffff">header</span> <span style="color: #ffffff">=</span> <span style="color: #ffffff">struct.unpack(str(headerlen)+</span><span style="color: #0086d2">&quot;l&quot;</span><span style="color: #ffffff">,</span> <span style="color: #ffffff">logfile.read(headerlen*</span><span style="color: #0086f7; font-weight: bold">4</span><span style="color: #ffffff">))</span>
+    <span style="color: #008800; font-style: italic; background-color: #0f140f"># header * 4 bytes for each and another 8 bytes for the header size</span>
+    <span style="color: #ffffff">offset</span> <span style="color: #ffffff">=</span> <span style="color: #ffffff">headerlen*</span><span style="color: #0086f7; font-weight: bold">4</span><span style="color: #ffffff">+</span><span style="color: #0086f7; font-weight: bold">8</span>
+    <span style="color: #fb660a; font-weight: bold">for</span> <span style="color: #ffffff">headerpos</span> <span style="color: #ffffff">in</span> <span style="color: #ffffff">range(len(header)):</span>
+        <span style="color: #fb660a; font-weight: bold">if</span> <span style="color: #ffffff">headerpos</span> <span style="color: #ffffff">==</span> <span style="color: #0086f7; font-weight: bold">0</span><span style="color: #ffffff">:</span>
+            <span style="color: #ffffff">startbyte</span> <span style="color: #ffffff">=</span> <span style="color: #ffffff">offset</span>
+            <span style="color: #ffffff">endbyte</span> <span style="color: #ffffff">=</span> <span style="color: #ffffff">header[headerpos]</span>
+        <span style="color: #fb660a; font-weight: bold">else</span><span style="color: #ffffff">:</span>
+            <span style="color: #ffffff">startbyte</span> <span style="color: #ffffff">=</span> <span style="color: #ffffff">offset</span> <span style="color: #ffffff">+</span> <span style="color: #ffffff">header[headerpos-</span><span style="color: #0086f7; font-weight: bold">1</span><span style="color: #ffffff">]</span>
+            <span style="color: #ffffff">endbyte</span> <span style="color: #ffffff">=</span> <span style="color: #ffffff">header[headerpos]</span> <span style="color: #ffffff">-</span> <span style="color: #ffffff">header[headerpos-</span><span style="color: #0086f7; font-weight: bold">1</span><span style="color: #ffffff">]</span>
+        <span style="color: #ffffff">logfile.seek(startbyte)</span>
+        <span style="color: #ffffff">logitem</span> <span style="color: #ffffff">=</span> <span style="color: #ffffff">logfile.read(endbyte)[</span><span style="color: #0086f7; font-weight: bold">2</span><span style="color: #ffffff">:]</span>
+</pre></div>
 
 Using the struct import makes this a quick process to read the headers and loop through each log entry.  Once
 it has been read it passes it to all available language parsers to interprit since there isn't a specific language
