@@ -7,7 +7,7 @@ There is no unique ID for each monster being attacked. This proves quite trouble
 The log format does not include damage due to damage over time. Because of this you will not see the total damage being done to you or the monster if a DOT is used.
 The data gathered by the log viewer is reduced to just a small fraction of the overall log. An example output of a log entry being sent would be:
 
-The website to browse your log data can be found at: http://www.ffxivbattle.com/
+The website to browse your log data can be found at: <http://www.ffxivbattle.com/>
 
 ### Example Data ###
 
@@ -98,8 +98,22 @@ output. Changes in the 3.2 version of the log parser introduced parsing of the b
 offsets. This offers a dramatic improvement on the quality of the output since it always knows the length of
 the lines being parsed.  The important part of this is the actual reading of the header:
 
-https://gist.github.com/893979
-<script src="https://gist.github.com/893979.js"> </script>
+    logfile = open(logfilename, 'rb')
+    # read in the length of this files records
+    headerparts = struct.unpack("2l", logfile.read(8))
+    headerlen = headerparts[1] - headerparts[0]
+    header = struct.unpack(str(headerlen)+"l", logfile.read(headerlen*4))
+    # header * 4 bytes for each and another 8 bytes for the header size
+    offset = headerlen*4+8
+    for headerpos in range(len(header)):
+        if headerpos == 0:
+            startbyte = offset
+            endbyte = header[headerpos]
+        else:
+            startbyte = offset + header[headerpos-1]
+            endbyte = header[headerpos] - header[headerpos-1]
+        logfile.seek(startbyte)
+        logitem = logfile.read(endbyte)[2:]
 
 Using the struct import makes this a quick process to read the headers and loop through each log entry.  Once
 it has been read it passes it to all available language parsers to interprit since there isn't a specific language
