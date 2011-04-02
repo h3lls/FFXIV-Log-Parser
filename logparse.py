@@ -81,7 +81,7 @@ if os.path.exists('config/') and not os.path.exists('logparser.cfg'):
 else:
     configfile = 'logparser.cfg'
 
-version = 3.2
+version = 3.3
 charactername = ""
 doloop = 0
 
@@ -270,18 +270,10 @@ class MainFrame(wx.Frame):
         self.Show(True)
 
     def OnSize(self, event):
-        event.Skip()
-        
-        #print "test"
-        #self.SetTitle(str(event.GetSize()))
+        event.Skip()        
         size = event.GetSize()
-        #print size
         self.logWindow.SetSize((size[0] - 30, size[1] - 240))
         self.charlink.SetPosition((5, size[1] - 100))
-        '''
-        = size[0] - 20
-        self.logWindow.height = size[1] - 220
-        '''
 
     def CheckPassword(self, charactername, salt, hashed_password):
         # call out to verify the password
@@ -647,7 +639,7 @@ debuglevel = 0
 class ffxiv_parser:
     def __init__(self, language): 
         self.language = language
-        self.defaultmonster = {"datetime":"", "monster":"", "monstermiss":0, "othermonstermiss":0, "damage":[], "miss":0, "hitdamage":[], "otherdamage":[], "othermiss":[], "otherhitdamage":[], "skillpoints":0, "class":"", "exp":0}
+        self.defaultmonster = {"datetime":"", "monster":"", "monstermiss":0, "othermonstermiss":0, "damage":[], "miss":0, "hitdamage":[], "otherdamage":[], "othermiss":[], "spells":[], "healing":[], "otherhealing":[], "otherhitdamage":[], "skillpoints":0, "class":"", "exp":0}
         self.defaultcrafting = {"datetime":"", "item":"", "actions":[], "ingredients":[], "success":0, "skillpoints":0, "class":"", "exp":0}
         self.characterdata = {"charactername":"", "deaths":[]}
         self.monsterdata = []
@@ -710,8 +702,8 @@ class ffxiv_parser:
             '59': self.parse_othermiss,
             '5A': self.parse_monstermiss,
             '5B': self.parse_othermiss,
-            '5C': self.parse_absorb, #self casting?
-            '5D': self.parse_recover, # party casting?
+            '5C': self.parse_selfcast, #self casting
+            '5D': self.parse_otherrecover, # party casting?
             '5E': self.parse_otherrecover, # other casting?
             '5F': self.parse_otherrecover, # recover mp from monster
             '60': self.parse_monstereffect, # monster starts casting
@@ -1370,6 +1362,10 @@ class english_parser(ffxiv_parser):
             crithitdmgavgcount = 0
             totalhitdmgavg = 0
             othertotaldmg = 0
+            healingavg = 0
+            healingavgcount = 0
+            absorbavg = 0
+            absorbavgcount = 0
             for otherdamage in currentmonster["otherdamage"]:
                 if otherdamage[0] == '':
                     continue
@@ -1383,6 +1379,14 @@ class english_parser(ffxiv_parser):
                 else:
                     hitdmgavg = hitdmgavg + int(hitdamage[0])
                     hitdmgavgcount = hitdmgavgcount + 1
+
+            for healing in currentmonster["healing"]:
+                if healing[1] == 'heal':
+                    healingavg = healingavg + int(healing[2])
+                    healingavgcount = healingavgcount + 1
+                if healing[1] == 'absorb':
+                    absorbavg = absorbavg + int(healing[2])
+                    absorbavgcount = absorbavgcount + 1
 
             for damage in currentmonster["damage"]:
                 if damage[0] == '':
@@ -1405,11 +1409,17 @@ class english_parser(ffxiv_parser):
                 regulardmgavg = regularavg / regularavgcount
             if criticalavg + regularavg != 0:
                 totaldmgavg = (criticalavg + regularavg) / (criticalavgcount + regularavgcount)
+            if healingavg != 0:
+                healingavg = healingavg / healingavgcount
+            if absorbavg != 0:
+                absorbavg = absorbavg / absorbavgcount
             if currentmonster["miss"] > 0:
                 hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
                 hitpercent = (100 - hitpercent)
-            print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
+            print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nHealing Avg: %i\nAbsorb Avg: %i\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, healingavg, absorbavg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
             self.monsterdata.append(currentmonster)
+            #raw_input('absorb')
+
             #if len(monsterdata) > 20:
             #    uploadToDB()
 
@@ -1570,21 +1580,49 @@ class english_parser(ffxiv_parser):
         self.echo("effect " + logitem, 1)
 
     def parse_otherrecover(self, code, logitem):
-        if logitem.find("recovers") != -1:	
-            othershealing = logitem[logitem.find("recovers ") +9:logitem.find(" HP")]
-        self.echo("otherrecover " + logitem, 1)
-
-    def parse_recover(self, code, logitem):
         if logitem.find("You recover") != -1:
-            healing = logitem[logitem.find("recover ") +8:logitem.find(" HP")]
-        
-        self.echo("recover " + logitem, 1)
+            usepos = logitem.find(" uses ")
+            caster = logitem[:usepos]
+            spell = logitem[usepos + 6: logitem.find(". ")]
+            target = self.characterdata["charactername"]
+            healamount = logitem[logitem.find("recover ") +8:logitem.find(" HP")]
+            self.currentmonster["otherhealing"].append([caster, target, spell, healamount])
+            #print self.currentmonster["otherhealing"]
+        if logitem.find("recovers") != -1:
+            usepos = logitem.find(" uses ")
+            onpos = logitem.find(" on ")
+            caster = logitem[:usepos]
+            spell = logitem[usepos + 6: onpos]
+            target = logitem[onpos + 4:logitem.find(". ")]
+            healamount = logitem[logitem.find("recovers ") +9:logitem.find(" HP")]
+            self.currentmonster["otherhealing"].append([caster, target, spell, healamount])
+        self.echo("otherrecover %s %s" % (code, logitem), 1)
 
-    def parse_absorb(self, code, logitem):
+    def parse_selfcast(self, code, logitem):
         if logitem.find("You absorb") != -1:
-            healing = logitem[logitem.find("absorb ") +7:logitem.find(" HP")]
-        
-        self.echo("absorb " + logitem, 1)
+            if logitem.find(" MP ") != -1:
+                return
+            monster = logitem[logitem.find("from the ") + 9:logitem.find(".")]
+            if monster == self.currentmonster["monster"]:
+                type = "absorb"
+                healing = logitem[logitem.find("absorb ") +7:logitem.find(" HP")]
+                self.currentmonster["healing"].append([self.characterdata["charactername"], type, healing])
+                #print self.currentmonster["healing"]
+                return
+        if logitem.find("You recover") != -1:
+            type = "heal"
+            healing = logitem[logitem.find("recover ") +8:logitem.find(" HP")]
+            self.currentmonster["healing"].append([self.characterdata["charactername"], type, healing])
+            #print self.currentmonster["healing"]
+            return
+        if logitem.find("recovers") != -1:
+            type = "heal"
+            healing = logitem[logitem.find("recovers ") +9:logitem.find(" HP")]
+            target = logitem[logitem.find(". ") + 2:logitem.find(" recovers")]
+            self.currentmonster["healing"].append([target, type, healing])
+            #print self.currentmonster["healing"]
+            return
+        self.echo("recover %s %s" % (code, logitem), 1)
 
     def parse_monstermiss(self, code, logitem):
         self.echo("monstermiss " + logitem, 1)
@@ -2591,6 +2629,12 @@ class japanese_parser(ffxiv_parser):
         
         self.echo("absorb " + logitem, 1)
 
+    def parse_selfcast(self, code, logitem):
+        if logitem.find("You recover") != -1:
+            healing = logitem[logitem.find("recover ") +8:logitem.find(" HP")]
+        
+        self.echo("recover %s %s" % (code, logitem), 1)
+
     def parse_monstermiss(self, code, logitem):
         self.echo("monstermiss " + logitem, 1)
 
@@ -2883,22 +2927,44 @@ def uploadToDB(password="", parsers=[]):
             response = "YES"
         if response == "" or response.upper() == "Y" or response.upper() == "YES":
             if len(parser.monsterdata) > 0:
-                url = doUpload(jsondata)
+                end = 100
+                totalbattlerecords = 0
+                deaths = 0
+                recordsimported = 0
+                updatedrecords = 0
+                url = None
+                for start in range(0, len(parser.monsterdata), 100):
+                    if end > len(parser.monsterdata):
+                        end = len(parser.monsterdata)
+                    tmpdata = {"version": version, "language": parser.getlanguage(), "password": password, "character": parser.characterdata, "battle": parser.monsterdata[start:end], "crafting":parser.craftingdata, "gathering":parser.gatheringdata}
+                    print "Uploading log data. Records %d to %d." % (start, end)
+                    jsondata = json.dumps(tmpdata)
+                    url = doUpload(jsondata)
+                    if url == None:
+                        return
+                    end = end+100
+                    try:
+                        totalbattlerecords = int(url["totalbattlerecords"])
+                        deaths = deaths + int(url["deaths"])
+                        recordsimported = recordsimported + int(url["recordsimported"])
+                        updatedrecords = updatedrecords + int(url["updatedrecords"])
+                    except:
+                        print "Did not understand the response from the server."
                 if parser.getlanguage() == "jp":
-                    print u"\n合計グローバルバトルレコード: %s" % url["totalbattlerecords"]
-                    print u"合計新キャラクター死亡: %s" % url["deaths"]
-                    print u"レコード送信（無視される重複）: %s" % url["recordsimported"]
-                    print u"ウェブサイトにアップロードされたレコード: %s" % url["updatedrecords"]
-                    if int(url["updatedrecords"]) > 0:
+                    print u"\n合計グローバルバトルレコード: %d" % totalbattlerecords
+                    print u"合計新キャラクター死亡: %d" % deaths
+                    print u"レコード送信（無視される重複）: %d" % recordsimported
+                    print u"ウェブサイトにアップロードされたレコード: %d" % updatedrecords
+                    if int(updatedrecords) > 0:
                         print u"\nあなたのデータはあなたがそれを見ることができる、アップロードされています： \n\n%s" % url["url"] 
                     else:
                         print u"\nいいえ、新しいレコード。あなたはあなたのデータを表示することができます： \n\n%s\n" % url["url"] 
                 elif parser.getlanguage() == "en":
-                    print "\nTotal Global Battle Records: %s" % url["totalbattlerecords"]
-                    print "Total New Character Deaths: %s" % url["deaths"]
-                    print "Records Sent (Duplicates ignored): %s" % url["recordsimported"]
-                    print "Records Uploaded To Website: %s" % url["updatedrecords"]
-                    if int(url["updatedrecords"]) > 0:
+                    print "\nTotal Global Battle Records: %d" % totalbattlerecords
+                    print "Total New Character Deaths: %d" % deaths
+                    print "Records Sent (Duplicates ignored): %d" % recordsimported
+                    print "Records Uploaded To Website: %d" % updatedrecords
+                    if int(updatedrecords) > 0:
                         print "\nYour data has been uploaded, you can view it at: \n\n%s" % url["url"] 
                     else:
                         print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"]                 
@@ -2923,7 +2989,12 @@ def doUpload(jsondata):
         req = urllib2.Request(url, jsondata, headers)
         response = urllib2.urlopen(req)
         jsonresults = response.read()
-        return json.loads(jsonresults)
+        try:
+            return json.loads(jsonresults)
+        except:
+            print "There was an issue uploading to the server see below:"
+            print jsonresults
+            return None
     except Exception as e:
         print "There was a problem uploading your data."
         print e
