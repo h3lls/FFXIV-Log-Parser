@@ -81,9 +81,12 @@ if os.path.exists('config/') and not os.path.exists('logparser.cfg'):
 else:
     configfile = 'logparser.cfg'
 
-version = 3.3
+version = 3.5
 charactername = ""
 doloop = 0
+
+# Store the last log parsed
+lastlogparsed = None
 
 guithread = None
 
@@ -518,8 +521,15 @@ class GUIThread(Thread):
 
 def main():
     #try:    
-        global doloop, guithread
+        global doloop, guithread, configfile, lastlogparsed
         args = sys.argv[1:]
+
+        config = ConfigParser.ConfigParser()
+        try:
+            config.read(configfile)
+            lastlogparsed = float(config.get('Config', 'lastlogparsed'))
+        except:
+            pass
 
         if len(args) < 1:
             try:
@@ -707,7 +717,7 @@ class ffxiv_parser:
             '5E': self.parse_otherrecover, # other casting?
             '5F': self.parse_otherrecover, # recover mp from monster
             '60': self.parse_monstereffect, # monster starts casting
-            '61': self.parse_otherabilities,
+            '61': self.parse_otherrecover,
             '62': self.parse_effect,
             '63': self.parse_othereffect,
             '64': self.parse_partyabilities,
@@ -1580,12 +1590,16 @@ class english_parser(ffxiv_parser):
         self.echo("effect " + logitem, 1)
 
     def parse_otherrecover(self, code, logitem):
+        if logitem.find(" MP") != -1:
+            return
         if logitem.find("You recover") != -1:
             usepos = logitem.find(" uses ")
             caster = logitem[:usepos]
             spell = logitem[usepos + 6: logitem.find(". ")]
             target = self.characterdata["charactername"]
             healamount = logitem[logitem.find("recover ") +8:logitem.find(" HP")]
+            if int(healamount) == 0:
+                return
             self.currentmonster["otherhealing"].append([caster, target, spell, healamount])
             #print self.currentmonster["otherhealing"]
         if logitem.find("recovers") != -1:
@@ -1595,29 +1609,37 @@ class english_parser(ffxiv_parser):
             spell = logitem[usepos + 6: onpos]
             target = logitem[onpos + 4:logitem.find(". ")]
             healamount = logitem[logitem.find("recovers ") +9:logitem.find(" HP")]
+            if int(healamount) == 0:
+                return
             self.currentmonster["otherhealing"].append([caster, target, spell, healamount])
         self.echo("otherrecover %s %s" % (code, logitem), 1)
 
     def parse_selfcast(self, code, logitem):
+        if logitem.find(" MP") != -1:
+            return
         if logitem.find("You absorb") != -1:
-            if logitem.find(" MP ") != -1:
-                return
             monster = logitem[logitem.find("from the ") + 9:logitem.find(".")]
             if monster == self.currentmonster["monster"]:
                 type = "absorb"
                 healing = logitem[logitem.find("absorb ") +7:logitem.find(" HP")]
+                if int(healing) == 0:
+                    return
                 self.currentmonster["healing"].append([self.characterdata["charactername"], type, healing])
                 #print self.currentmonster["healing"]
                 return
         if logitem.find("You recover") != -1:
             type = "heal"
             healing = logitem[logitem.find("recover ") +8:logitem.find(" HP")]
+            if int(healing) == 0:
+                return
             self.currentmonster["healing"].append([self.characterdata["charactername"], type, healing])
             #print self.currentmonster["healing"]
             return
         if logitem.find("recovers") != -1:
             type = "heal"
             healing = logitem[logitem.find("recovers ") +9:logitem.find(" HP")]
+            if int(healing) == 0:
+                return
             target = logitem[logitem.find(". ") + 2:logitem.find(" recovers")]
             self.currentmonster["healing"].append([target, type, healing])
             #print self.currentmonster["healing"]
@@ -1793,8 +1815,13 @@ class english_parser(ffxiv_parser):
         #if and self.spset and self.defeated:
         #    self.engaged(logitem)
         self.echo("spexpgain " + logitem, 1)
-
+    def throwaway(self, logitem):
+        item = logitem[logitem.find("away the ") + 9:logitem.find(".")]
+        #self.lostitems.append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "item":item})
+        
     def parse_genericmessage(self, code, logitem):
+        if logitem.find("You throw away") != -1:
+            self.throwaway(logitem)
         if logitem.find("engaged") != -1:
             self.engaged(logitem)
         elif logitem.find("You use") != -1:
@@ -2406,6 +2433,10 @@ class japanese_parser(ffxiv_parser):
             crithitdmgavgcount = 0
             totalhitdmgavg = 0
             othertotaldmg = 0
+            healingavg = 0
+            healingavgcount = 0
+            absorbavg = 0
+            absorbavgcount = 0
             for otherdamage in currentmonster["otherdamage"]:
                 if otherdamage[0] == '':
                     continue
@@ -2419,6 +2450,14 @@ class japanese_parser(ffxiv_parser):
                 else:
                     hitdmgavg = hitdmgavg + int(hitdamage[0])
                     hitdmgavgcount = hitdmgavgcount + 1
+
+            for healing in currentmonster["healing"]:
+                if healing[1] == 'heal':
+                    healingavg = healingavg + int(healing[2])
+                    healingavgcount = healingavgcount + 1
+                if healing[1] == 'absorb':
+                    absorbavg = absorbavg + int(healing[2])
+                    absorbavgcount = absorbavgcount + 1
 
             for damage in currentmonster["damage"]:
                 if damage[0] == '':
@@ -2441,10 +2480,14 @@ class japanese_parser(ffxiv_parser):
                 regulardmgavg = regularavg / regularavgcount
             if criticalavg + regularavg != 0:
                 totaldmgavg = (criticalavg + regularavg) / (criticalavgcount + regularavgcount)
+            if healingavg != 0:
+                healingavg = healingavg / healingavgcount
+            if absorbavg != 0:
+                absorbavg = absorbavg / absorbavgcount
             if currentmonster["miss"] > 0:
                 hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
                 hitpercent = (100 - hitpercent)
-            print u"敗北 %s ⇒ %s\nヒット %%: %i%%\n合計平均ダメージ: %i\nクリティカルの平均ダメージ: %i\nレギュラーの平均被害: %i\n合計ダメージ平均を撮影ヒット: %i\nクリティカルヒットのダメージの平均: %i\nダメージ平均ヒット: %i\nその他から合計ダメージ: %i\n経験値: %i\n修錬値: %i\n日付時刻: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
+            print u"敗北 %s ⇒ %s\nヒット %%: %i%%\n合計平均ダメージ: %i\nクリティカルの平均ダメージ: %i\nレギュラーの平均被害: %i\n合計ダメージ平均を撮影ヒット: %i\nクリティカルヒットのダメージの平均: %i\nダメージ平均ヒット: %i\nその他から合計ダメージ: %i\n平均ヒーリング: %i\n吸収平均: %i\n経験値: %i\n修錬値: %i\n日付時刻: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, healingavg, absorbavg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
             self.monsterdata.append(currentmonster)
             #if len(monsterdata) > 20:
             #    uploadToDB()
@@ -2613,27 +2656,43 @@ class japanese_parser(ffxiv_parser):
         self.echo("effect " + logitem, 1)
 
     def parse_otherrecover(self, code, logitem):
-        if logitem.find("recovers") != -1:	
-            othershealing = logitem[logitem.find("recovers ") +9:logitem.find(" HP")]
-        self.echo("otherrecover " + logitem, 1)
-
-    def parse_recover(self, code, logitem):
-        if logitem.find("You recover") != -1:
-            healing = logitem[logitem.find("recover ") +8:logitem.find(" HP")]
-        
-        self.echo("recover " + logitem, 1)
-
-    def parse_absorb(self, code, logitem):
-        if logitem.find("You absorb") != -1:
-            healing = logitem[logitem.find("absorb ") +7:logitem.find(" HP")]
-        
-        self.echo("absorb " + logitem, 1)
+        self.echo("otherrecover %s %s" % (code, logitem), 1)
+        if logitem.find("MP") != -1:
+            return
+        if logitem.find(u"回復した") != -1:
+            caster = logitem[:logitem.find(u"は")]
+            spell = logitem[logitem.find(u"「")+1: logitem.find(u"」")]
+            target = logitem[logitem.find(u"⇒　") + 2:logitem.find(u"はＨＰ")]
+            healamount = logitem[logitem.find(u"ＨＰを") +3:logitem.find(u"回復した")]
+            if int(healamount) == 0:
+                return
+            self.currentmonster["otherhealing"].append([caster, target, spell, healamount])
 
     def parse_selfcast(self, code, logitem):
-        if logitem.find("You recover") != -1:
-            healing = logitem[logitem.find("recover ") +8:logitem.find(" HP")]
-        
         self.echo("recover %s %s" % (code, logitem), 1)
+        if logitem.find("MP") != -1:
+            return
+        if logitem.find(u"吸収した") != -1:
+            monster = logitem[logitem.find(u"は") + 1:logitem.find(u"の")]
+            if monster == self.currentmonster["monster"]:
+                type = "absorb"
+                healing = logitem[logitem.find(u"ＨＰを") +3:logitem.find(u"吸収した")]
+                if int(healing) == 0:
+                    return
+                self.currentmonster["healing"].append([self.characterdata["charactername"], type, healing])
+                return
+        if logitem.find(u"回復した") != -1:
+            type = "heal"
+            healing = logitem[logitem.find(u"ＨＰを") +3:logitem.find(u"回復した")]
+            if int(healing) == 0:
+                return
+            caster = logitem[:logitem.find(u"は")]
+            target = logitem[logitem.find(u"は") + 1:logitem.find(u"に")]
+            if caster == target:
+                self.currentmonster["healing"].append([self.characterdata["charactername"], type, healing])
+            else:
+                self.currentmonster["healing"].append([target, type, healing])
+            return
 
     def parse_monstermiss(self, code, logitem):
         self.echo("monstermiss " + logitem, 1)
@@ -2666,13 +2725,17 @@ class japanese_parser(ffxiv_parser):
     def parse_otherhitdamage(self, code, logitem):
         attacker = logitem[:logitem.find(u"は")]
         defender = logitem[logitem.find(u"は") +1:logitem.find(u"に")]
-        
+        attacktype = logitem[logitem.find(u"「") +1:logitem.find(u"」")]
+
+        if defender == self.currentmonster["monster"] and attacktype == u"攻撃":
+            # The monster did damage to itself, jumping djigga im looking at you...
+            return
+            
         if attacker == self.currentmonster["monster"]:
             if logitem.find(u"クリティカル！") != -1:
                 critical = 1
             else:
                 critical = 0
-            attacktype = logitem[logitem.find(u"「") +1:logitem.find(u"」")]
             if logitem.find(u"ダメージを与えた") != -1:
                 if critical:
                     hitdamage = int(logitem[logitem.find(u"クリティカル！　") +9:logitem.find(u"ダメージを与えた")])
@@ -2692,38 +2755,48 @@ class japanese_parser(ffxiv_parser):
             return
         attacker = logitem[:logitem.find(u"は")]
         defender = logitem[logitem.find(u"は") +1:logitem.find(u"に")]
+        attacktype = logitem[logitem.find(u"「") +1:logitem.find(u"」")]
         # this is a hit, not damage redirect to the right method.
-        if attacker == self.currentmonster["monster"]:
+        if attacker == self.currentmonster["monster"] or attacktype == u"攻撃":
             self.parse_otherhitdamage(code, logitem)
             return
         if logitem.find(u"クリティカル！") != -1:
             critical = 1
         else:
             critical = 0
-        attacktype = logitem[logitem.find(u"「") +1:logitem.find(u"」")]
         # Spell Resistance
         if logitem.find(u"魔法に抵抗し") != -1:
-            damage = int(logitem[logitem.find(u"ダメージは") + 6:logitem.find(u"に半減された")])
+            try:
+                damage = int(logitem[logitem.find(u"ダメージは") + 6:logitem.find(u"に半減された")])
+            except ValueError:
+                return
             self.currentmonster["otherdamage"].append([damage, critical, attacktype, attacker])
             return
         if logitem.find(u"に軽減された") != -1:
-            damage = int(logitem[logitem.find(u"ダメージは") + 6:logitem.find(u"に軽減された")])
+            try:
+                damage = int(logitem[logitem.find(u"ダメージは") + 6:logitem.find(u"に軽減された")])
+            except ValueError:
+                return
             self.currentmonster["otherdamage"].append([damage, critical, attacktype, attacker])
             return
         if logitem.find(u"のＭＰ") != -1:
             # no use for MP drain right now.  later when i do healing it will be good.
             return
         if logitem.find(u"ダメージを与えた") != -1:
-            if critical:
-                damage = int(logitem[logitem.find(u"クリティカル！　") +9:logitem.find(u"ダメージを与えた")])
-            else:
-                # leg hit
-                if logitem.find(u"の脚部") != -1:
-                    damage = int(logitem[logitem.find(u"の脚部に") +5:logitem.find(u"のダメージを与えた")])
+            try:
+                if critical:
+                    damage = int(logitem[logitem.find(u"クリティカル！　") +9:logitem.find(u"ダメージを与えた")])
                 else:
-                    damage = int(logitem[logitem.find(u"⇒　") +2:logitem.find(u"ダメージを与えた")])
-            self.currentmonster["otherdamage"].append([damage, critical, attacktype, attacker])
-            return
+                    # leg hit
+                    if logitem.find(u"の脚部") != -1:
+                        damage = int(logitem[logitem.find(u"の脚部に") +5:logitem.find(u"のダメージを与えた")])
+                    else:
+                        damage = int(logitem[logitem.find(u"⇒　") +2:logitem.find(u"ダメージを与えた")])
+                self.currentmonster["otherdamage"].append([damage, critical, attacktype, attacker])
+                return
+            except ValueError:
+                return
+            
         self.echo("otherdamage code %s: %s " % (code, logitem), 1)
 
     def parse_hitdamage(self, code, logitem):
@@ -2761,7 +2834,11 @@ class japanese_parser(ffxiv_parser):
                 damage = logitem[logitem.find(u"クリティカル！　") +9:logitem.find(u"ダメージを与えた。")]
             else:
                 damage = logitem[logitem.find(u"⇒　") +2:logitem.find(u"ダメージを与えた。")]
-            self.currentmonster["damage"].append([int(damage), critical, attacktype])
+            try:
+                self.currentmonster["damage"].append([int(damage), critical, attacktype])
+            except:
+                if logitem.find(u"打ち消した") != -1:
+                    return
             return
         self.echo("damagedealt " + logitem, 1)
 
@@ -2857,13 +2934,25 @@ class japanese_parser(ffxiv_parser):
 
 
 def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, password=""):
+    global configfile, lastlogparsed
+    config = ConfigParser.ConfigParser()
+    config.read(configfile)
+    try:
+        config.add_section('Config')
+    except ConfigParser.DuplicateSectionError:
+        pass
     en_parser = english_parser()
     jp_parser = japanese_parser()
     en_parser.characterdata["charactername"] = charactername
     jp_parser.characterdata["charactername"] = charactername
+    logfile = None
+    logsparsed = 0
     for logfilename in paths:
         try:
             logfiletime = os.stat(logfilename).st_mtime
+            if logfiletime < lastlogparsed:
+                continue
+            logsparsed = logsparsed + 1
             en_parser.setLogFileTime(logfiletime)
             jp_parser.setLogFileTime(logfiletime)
             logfile = open(logfilename, 'rb')
@@ -2900,14 +2989,21 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
                         return
                 continue
         finally:            
-            logfile.close()
-    # uncomment for debugging 
-    #return
-    uploadToDB(password, [en_parser, jp_parser])
+            if logfile:
+                logfile.close()
+        lastlogparsed = logfiletime
+        config.set('Config', 'lastlogparsed', lastlogparsed)
+        with open(configfile, 'wb') as openconfigfile:
+            config.write(openconfigfile)
+    # uncomment for debugging to disable uploads
+    # return
+    if logsparsed > 0:
+        uploadToDB(password, [en_parser, jp_parser])
+    else:
+        print "No new log data to parse.  Don't you have some leves to do?"
 
 def uploadToDB(password="", parsers=[]):
     global doloop
-    
     for parser in parsers:
         tmpdata = {"version": version, "language": parser.getlanguage(), "password": password, "character": parser.characterdata, "battle": parser.monsterdata, "crafting":parser.craftingdata, "gathering":parser.gatheringdata}
         jsondata = json.dumps(tmpdata)
