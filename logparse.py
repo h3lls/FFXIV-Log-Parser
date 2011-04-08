@@ -58,7 +58,8 @@ import urllib2
 import uuid
 import shutil
 import struct
-
+import locale 
+ 
 from subprocess import Popen
 try:
     from agw import hyperlink as hl
@@ -81,12 +82,12 @@ if os.path.exists('config/') and not os.path.exists('logparser.cfg'):
 else:
     configfile = 'logparser.cfg'
 
-version = 3.5
+version = 3.6
 charactername = ""
 doloop = 0
 
 # Store the last log parsed
-lastlogparsed = None
+lastlogparsed = 0
 
 guithread = None
 
@@ -133,6 +134,8 @@ class MainFrame(wx.Frame):
         self.SetTitle("FFXIV Log Parser")
         self.filemenu.SetLabel(1, "&Start")
         self.filemenu.SetHelpString(1, " Start Processing Logs")
+        self.filemenu.SetLabel(4, "&Parse All Logs")
+        self.filemenu.SetHelpString(4, " Start Processing All Logs")
         self.filemenu.SetLabel(wx.ID_ABOUT, "&About")
         self.filemenu.SetHelpString(wx.ID_ABOUT, " Information about this program")
         self.filemenu.SetLabel(2, "&Check for New Version")
@@ -154,6 +157,8 @@ class MainFrame(wx.Frame):
         self.SetTitle(u"FFXIVのログパーサー")
         self.filemenu.SetLabel(1, u"開始")
         self.filemenu.SetHelpString(1, u"スタート処理のログ")
+        self.filemenu.SetLabel(4, u"再解析のログ")
+        self.filemenu.SetHelpString(4, u" 再解析のログ")
         self.filemenu.SetLabel(wx.ID_ABOUT, u"について")
         self.filemenu.SetHelpString(wx.ID_ABOUT, u"このプログラムについての情報")
         self.filemenu.SetLabel(2, u"新しいバージョンの確認")
@@ -185,12 +190,14 @@ class MainFrame(wx.Frame):
 
         # wx.ID_ABOUT and wx.ID_EXIT are standard IDs provided by wxWidgets.
         self.filemenu.Append(1, "&Start"," Start Processing Logs")
+        self.filemenu.Append(4, "&Parse All Logs"," Start Processing All Logs")
         self.filemenu.Append(wx.ID_ABOUT, "&About"," Information about this program")
         self.filemenu.AppendSeparator()
         self.filemenu.Append(2, "&Check for New Version"," Check for an update to the program")
         self.filemenu.AppendSeparator()
         self.filemenu.Append(wx.ID_EXIT,"E&xit"," Terminate the program")
         self.Bind(wx.EVT_MENU, self.OnStartCollecting, id=1)
+        self.Bind(wx.EVT_MENU, self.OnStartCollectingAll, id=4)
         self.Bind(wx.EVT_MENU, self.OnCheckVersion, id=2)
         self.Bind(wx.EVT_MENU, self.OnExit, id=wx.ID_EXIT)
         self.Bind(wx.EVT_MENU, self.OnAbout, id=wx.ID_ABOUT)#menuItem)
@@ -381,6 +388,11 @@ THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES, INC
             self.OnExit(None)
             return
 
+    def OnStartCollectingAll(self, e):
+        global lastlogparsed
+        lastlogparsed = 0
+        self.OnStartCollecting(e)
+        
     def OnStartCollecting(self, e):
         global guithread, configfile
         self.filemenu.Enable(1, False)
@@ -536,7 +548,8 @@ def main():
                 guithread = GUIThread(None, None, None) 
                 doloop = 1
                 app = wx.App()
-                if versioncheck():
+                configlang = config.get('Config', 'language')
+                if versioncheck(language=configlang):
                     Popen("setup.exe", shell=False) # start reloader
                     return
                 frame = MainFrame(None, "FFXIV Log Parser")
@@ -1822,6 +1835,8 @@ class english_parser(ffxiv_parser):
     def parse_genericmessage(self, code, logitem):
         if logitem.find("You throw away") != -1:
             self.throwaway(logitem)
+        if logitem.find("is defeated") != -1:
+            self.parse_defeated(code, logitem)
         if logitem.find("engaged") != -1:
             self.engaged(logitem)
         elif logitem.find("You use") != -1:
@@ -3018,7 +3033,10 @@ def uploadToDB(password="", parsers=[]):
                 print u"JSONは、アップロード用にエンコードされた:"
             print jsondata
         if not doloop:
-            response = raw_input("\nDo you wish to upload the data printed above? [Y/n]: ")
+            if parser.getlanguage() == "en":
+                response = raw_input("\nDo you wish to upload the data printed above? [Y/n]: ")
+            else:
+                response = raw_input(u"\n上記の印刷データをアップロードしますか？ [Y/n]: ")
         else:
             response = "YES"
         if response == "" or response.upper() == "Y" or response.upper() == "YES":
@@ -3033,7 +3051,10 @@ def uploadToDB(password="", parsers=[]):
                     if end > len(parser.monsterdata):
                         end = len(parser.monsterdata)
                     tmpdata = {"version": version, "language": parser.getlanguage(), "password": password, "character": parser.characterdata, "battle": parser.monsterdata[start:end], "crafting":parser.craftingdata, "gathering":parser.gatheringdata}
-                    print "Uploading log data. Records %d to %d." % (start, end)
+                    if parser.getlanguage() == "en":
+                        print "Uploading log data. Records %d to %d." % (start, end)
+                    else:
+                        print "アップロードのログデータ。レコード%d〜%d。" % (start, end)
                     jsondata = json.dumps(tmpdata)
                     url = doUpload(jsondata)
                     if url == None:
@@ -3045,7 +3066,10 @@ def uploadToDB(password="", parsers=[]):
                         recordsimported = recordsimported + int(url["recordsimported"])
                         updatedrecords = updatedrecords + int(url["updatedrecords"])
                     except:
-                        print "Did not understand the response from the server."
+                        if parser.getlanguage() == "en":
+                            print "Did not understand the response from the server."
+                        else:
+                            print u"サーバーからの応答を理解できませんでした。"
                 if parser.getlanguage() == "jp":
                     print u"\n合計グローバルバトルレコード: %d" % totalbattlerecords
                     print u"合計新キャラクター死亡: %d" % deaths
@@ -3121,22 +3145,21 @@ def doAppUpdate():
     except Exception, e:
         return 0
 
-def versioncheck(status=0, language="EN"):
+def versioncheck(status=0, language="en"):
     response = None
     try:
         response = urllib2.urlopen('http://ffxivbattle.com/logparserversion-2.php');
     except:
         # There was a problem reading the version page skip it.
-        if language=="JP":
+        if language=="jp":
             print u"リモートのバージョン番号を読み取ることができません。"
         else:
             print "Unable to read the remote version number."
         return 0
     try:
-        #print response.read()
         versiondata = json.loads(response.read())
         if versiondata["version"] > version:
-            if language=="JP":
+            if language=="jp":
                 verdialog = wx.MessageDialog(None, u'新しいバージョンでは、ダウンロードし、インストールすることをご希望の利用可能ですか？\r\n変更: \r\n%s' % (versiondata["changetext"]), u'バージョン %d 対応' % (versiondata["version"]), 
                     wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
             else:
@@ -3145,7 +3168,7 @@ def versioncheck(status=0, language="EN"):
             if verdialog.ShowModal() == wx.ID_YES:
                 return doAppUpdate()
         elif status:
-            if language=="JP":
+            if language=="jp":
                 okdlg = wx.MessageDialog(None, u'現在、最新のバージョンを実行している。', u'最新バージョン', wx.OK)
             else:
                 okdlg = wx.MessageDialog(None, 'You are currently running the latest version.', 'Latest Version', wx.OK)
@@ -3153,7 +3176,7 @@ def versioncheck(status=0, language="EN"):
     except ValueError, e:
         # The result was garbage so skip it.
         traceback.print_exc()
-        if language=="JP":
+        if language=="jp":
             print u"リモートのバージョン番号を理解していないか。"
         else:
             print "Did not understand the remote version number."
