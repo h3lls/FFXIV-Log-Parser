@@ -61,10 +61,7 @@ import struct
 import locale 
  
 from subprocess import Popen
-try:
-    from agw import hyperlink as hl
-except ImportError: # if it's not there locally, try the wxPython lib.
-    import wx.lib.agw.hyperlink as hl
+import wx.lib.agw.hyperlink as hl
 
 # for installations that already have a config move the file to the config directory
 try:
@@ -82,7 +79,7 @@ if os.path.exists('config/') and not os.path.exists('logparser.cfg'):
 else:
     configfile = 'logparser.cfg'
 
-version = 3.6
+version = 4.0
 charactername = ""
 doloop = 0
 
@@ -92,15 +89,23 @@ lastlogparsed = 0
 guithread = None
 
 class PasswordDialog(wx.Dialog):
-    def __init__(self, parent, id, title, defaultPassword):
+    def __init__(self, parent, id, title, defaultPassword, language):
         wx.Dialog.__init__(self, parent, id, title, size=(285, 160))
 
-        wx.StaticText(self, -1, 'Enter Character Password (NOT your ffxiv password)\r\n* This is so only you can submit records for your character. If you don\'t have a password type in a new one to set it.', (5,3), (280, 60))
-        self.password = wx.TextCtrl(self, -1, defaultPassword, (5,65), (260, 22), style=wx.TE_PASSWORD)
-        self.checkbox = wx.CheckBox(self, -1, "Save Password", (5,95), (110, 22))
-        
-        wx.Button(self,  wx.ID_OK, 'Ok', (115, 95), (70, 30))
-        wx.Button(self,  wx.ID_CANCEL, 'Cancel', (195, 95), (70, 30))
+        if language == 'en':
+            wx.StaticText(self, -1, 'Enter Character Password (NOT your ffxiv password)\r\n* This is so only you can submit records for your character. If you don\'t have a password type in a new one to set it.', (5,3), (280, 60))
+            self.password = wx.TextCtrl(self, -1, defaultPassword, (5,65), (260, 22), style=wx.TE_PASSWORD)
+            self.checkbox = wx.CheckBox(self, -1, "Save Password", (5,95), (110, 22))
+            
+            wx.Button(self,  wx.ID_OK, 'Ok', (115, 95), (70, 30))
+            wx.Button(self,  wx.ID_CANCEL, 'Cancel', (195, 95), (70, 30))
+        else:
+            wx.StaticText(self, -1, u'文字パスワード（はなく、あなたのFF14パスワード）を入力してください\r\n* このためだけでなく、あなたの文字の記録を提出することができますです。あなたはそれを設定するための新しいいずれかのパスワードタイプを持っていない場合。', (5,3), (280, 60))
+            self.password = wx.TextCtrl(self, -1, defaultPassword, (5,65), (260, 22), style=wx.TE_PASSWORD)
+            self.checkbox = wx.CheckBox(self, -1, u"パスワードを保存", (5,95), (110, 22))
+            
+            wx.Button(self,  wx.ID_OK, u'はい', (115, 95), (70, 30))
+            wx.Button(self,  wx.ID_CANCEL, u'キャンセル', (195, 95), (70, 30))
 
     def SetChecked(self, value):
         self.checkbox.SetValue(value)
@@ -114,6 +119,37 @@ class PasswordDialog(wx.Dialog):
     def GetValue(self):
         return self.password.GetValue()
 
+class ChangeCharacterNameDialog(wx.Dialog):
+    def __init__(self, parent, id, title, language):
+        wx.Dialog.__init__(self, parent, id, title, size=(320, 200))
+        if language == 'en':
+            wx.StaticText(self, -1, 'Enter new character name:', (5,3), (305, 15))
+        else:
+            wx.StaticText(self, -1, u'新キャラクターの名前を入力してください：', (5,3), (305, 15))
+            
+        self.newcharactername = wx.TextCtrl(self, -1, "", (5,20), (300, 22))
+        if language == 'en':
+            wx.StaticText(self, -1, 'Enter current password:', (5,47), (300, 15))
+        else:
+            wx.StaticText(self, -1, u'現在のパスワードを入力してください：', (5,47), (300, 15))
+        self.password = wx.TextCtrl(self, -1, "", (5,65), (300, 22), style=wx.TE_PASSWORD)
+        if language == 'en':
+            wx.StaticText(self, -1, 'This may take up to 1 hour to appear on the website.\nChanging your character name can only be performed once an hour so choose wisely.', (5,90), (305, 40))
+        else:
+            wx.StaticText(self, -1, u'これは、ウェブサイト上で表示されるように1時間かかることがあります。\n時間はとても賢明な選択一度文字の名前を変更するだけで行うことができます。', (5,90), (305, 40))
+
+        if language == 'en':
+            wx.Button(self,  wx.ID_OK, 'Ok', (158, 135), (70, 30))
+            wx.Button(self,  wx.ID_CANCEL, 'Cancel', (235, 135), (70, 30))
+        else:
+            wx.Button(self,  wx.ID_OK, u'はい', (158, 135), (70, 30))
+            wx.Button(self,  wx.ID_CANCEL, u'キャンセル', (235, 135), (70, 30))
+
+    def GetNewCharacterName(self):
+        return self.newcharactername.GetValue()
+
+    def GetPassword(self):
+        return self.password.GetValue()
         
 class MainFrame(wx.Frame):
     def SaveLanguageSetting(self, lang):
@@ -125,7 +161,8 @@ class MainFrame(wx.Frame):
         except ConfigParser.DuplicateSectionError:
             pass
         config.read(configfile)
-        
+        self.language = lang
+
         config.set('Config', 'language', lang)
         with open(configfile, 'wb') as openconfigfile:
             config.write(openconfigfile)
@@ -146,6 +183,8 @@ class MainFrame(wx.Frame):
         self.menuBar.SetLabelTop(1, "&Language")
         self.st.SetLabel("Select Log Path")
         self.st2.SetLabel("Enter Your Character Name (default is unique id to hide your name)")
+        if self.btnCharChange:
+            self.btnCharChange.SetLabel("Change")
         self.btnStart.SetLabel("Start")
         self.lblLogWindow.SetLabel("Activity Log")
         self.charlink.SetLabel("test")
@@ -169,6 +208,8 @@ class MainFrame(wx.Frame):
         self.menuBar.SetLabelTop(1, u"言語")
         self.st.SetLabel(u"選択してログのパス")
         self.st2.SetLabel(u"文字型の名前 （デフォルトでは、名前を非表示にする一意のIDです）")
+        if self.btnCharChange:
+            self.btnCharChange.SetLabel(u"変更")
         self.btnStart.SetLabel(u"開始")
         self.lblLogWindow.SetLabel(u"アクティビティログ")
         self.charlink.SetLabel(u"FFXIVBattle.com文字ページ")
@@ -184,7 +225,7 @@ class MainFrame(wx.Frame):
             print e
         self.Bind(wx.EVT_CLOSE, self.OnClose)
         self.sb = self.CreateStatusBar() # A Statusbar in the bottom of the window
-
+        self.salt = None
         # Setting up the menu.
         self.filemenu= wx.Menu()
 
@@ -219,12 +260,14 @@ class MainFrame(wx.Frame):
         panel = wx.Panel(self, -1)
         logpath = ""
         charactername = hex(uuid.getnode())
+        charinconfig = False
         # read defaults
         config = ConfigParser.ConfigParser()
         try:
             config.read(configfile)
             logpath = config.get('Config', 'logpath')
             charactername = config.get('Config', 'charactername')
+            charinconfig = True
         except:
             logpath = ""
             pass
@@ -251,8 +294,17 @@ class MainFrame(wx.Frame):
         self.control = wx.TextCtrl(panel, -1, logpath, (5,21), (345, 22))
         self.btnDialog = wx.Button(panel, 102, "...", (350,20), (28, 24))
         self.Bind(wx.EVT_BUTTON, self.OnLogSelect, id=102)
-        self.st2 = wx.StaticText(panel, -1, 'Enter Your Character Name (default is unique id to hide your name)', (5,53))
-        self.charname = wx.TextCtrl(panel, -1, charactername, (5,70), (370, 22))
+        if charinconfig:
+            self.st2 = wx.StaticText(panel, -1, 'Enter Your Character Name (default is unique id to hide your name)', (5,53))
+            self.charname = wx.TextCtrl(panel, -1, charactername, (5,70), (310, 22))
+            self.charname.Disable()
+            self.btnCharChange = wx.Button(panel, 150, "Change", (320,69), (55, 24))
+            self.Bind(wx.EVT_BUTTON, self.OnChangeCharacter, id=150)
+        else:
+            self.btnCharChange = None
+            self.st2 = wx.StaticText(panel, -1, 'Enter Your Character Name (default is unique id to hide your name)', (5,53))
+            self.charname = wx.TextCtrl(panel, -1, charactername, (5,70), (370, 22))
+            
         self.btnStart = wx.Button(panel, 103, "Start", (150,100))
         self.Bind(wx.EVT_BUTTON, self.OnStartCollecting, id=103)
 
@@ -267,17 +319,95 @@ class MainFrame(wx.Frame):
         redir=RedirectText(self.logWindow)
         self.charlink = hl.HyperLinkCtrl(panel, -1, "FFXIVBattle.com Character Page", (5,216), (22, 80))
         self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=" + charactername)
-
+        self.language = 'en'
         try:
             configlang = config.get('Config', 'language')
             if configlang == 'jp':
                 self.languagemenu.Check(12, True)
                 self.SetJapanese(None)
+                self.language = 'jp'
         except:
             pass
 
         sys.stdout=redir
         self.Show(True)
+
+    def OnChangeCharacter(self, event):
+        global configfile
+        if self.language == 'en':
+            changecharnamedlg = ChangeCharacterNameDialog(self, -1, "Enter New Character Name", self.language)
+        else:
+            changecharnamedlg = ChangeCharacterNameDialog(self, -1, u"新キャラクター名を入力してください", self.language)
+            
+        if changecharnamedlg.ShowModal() == wx.ID_OK:
+            if not self.salt:
+                # extract salt from the dir
+                dirparts = self.control.GetValue().split("\\")
+                # set the salt to the users directory name for the character.  Not 100% but good enough to salt with.
+                self.salt = ""
+                if dirparts[len(dirparts)-1] == "":
+                    self.salt = dirparts[len(dirparts) - 3]
+                else:
+                    self.salt = dirparts[len(dirparts) - 2]
+            hash = hashlib.md5( self.salt + changecharnamedlg.GetPassword() ).hexdigest()
+            results = self.ChangeCharacterName(self.charname.GetValue(), changecharnamedlg.GetNewCharacterName(), hash)
+            if results:
+                if results["code"] < 0:
+                    if self.language == 'en':
+                        dlg = wx.MessageDialog( self, results["text"], "Error Changing Character Name", wx.OK)
+                    else:
+                        dlg = wx.MessageDialog( self, results["text"], u"文字の名前の変更中にエラー", wx.OK)
+                    dlg.ShowModal() # Show it
+                    dlg.Destroy() # finally destroy it when finished.
+                else:
+                    self.charname.SetValue(changecharnamedlg.GetNewCharacterName())
+                    config = ConfigParser.ConfigParser()
+                    try:
+                        config.add_section('Config')
+                    except ConfigParser.DuplicateSectionError:
+                        pass
+                    config.read(configfile)
+
+                    config.set('Config', 'charactername', self.charname.GetValue())
+                    with open(configfile, 'wb') as openconfigfile:
+                        config.write(openconfigfile)
+
+
+                    if self.language == 'en':
+                        dlg = wx.MessageDialog( self, results["text"], "Success", wx.OK)
+                    else:
+                        dlg = wx.MessageDialog( self, results["text"], u"成功", wx.OK)                        
+                    dlg.ShowModal() # Show it
+                    dlg.Destroy() # finally destroy it when finished.
+            else:
+                    if self.language == 'en':
+                        dlg = wx.MessageDialog( self, "Did not understand server response.", "Try Again Later", wx.OK)
+                    else:
+                        dlg = wx.MessageDialog( self, u"サーバの応答を解釈しませんでした。", u"てみてください後でもう一度", wx.OK)
+                    dlg.ShowModal() # Show it
+                    dlg.Destroy() # finally destroy it when finished.
+        else:
+            if self.language == 'en':
+                print "Character name change cancelled."
+            else:
+                print u"キャラクター名の変更がキャンセルされました。"
+
+    def ChangeCharacterName(self, charactername, newcharactername, hashed_password):
+        # call out to verify the password
+        response = None
+        try:
+            encodedname = urllib.urlencode({"oldcharname": charactername.encode("utf-8")})
+            newencodedname = urllib.urlencode({"newcharname": newcharactername.encode("utf-8")})
+            response = urllib2.urlopen('http://ffxivbattle.com/updatecharactername.php?%s&%s&password=%s' % (encodedname, newencodedname, hashed_password))
+            responsetext = response.read()
+            #print responsetext
+            return json.loads(responsetext)
+        except Exception as e:
+            # The result was garbage so skip it.
+            print type(e)
+            print e
+            print "Did not understand the response from the server for the character name change."
+            return False
 
     def OnSize(self, event):
         event.Skip()        
@@ -289,8 +419,8 @@ class MainFrame(wx.Frame):
         # call out to verify the password
         response = None
         try:
-            encodedname = urllib.quote(charactername)
-            response = urllib2.urlopen('http://ffxivbattle.com/passwordcheck.php?charactername=%s&salt=%s&password=%s' % (encodedname, salt, hashed_password))
+            encodedname = urllib.urlencode({"charactername": charactername.encode("utf-8")})
+            response = urllib2.urlopen('http://ffxivbattle.com/passwordcheck.php?%s&salt=%s&password=%s' % (encodedname, salt, hashed_password))
             return json.loads(response.read())["result"] == True
         except Exception, e:
             # The result was garbage so skip it.
@@ -301,7 +431,10 @@ class MainFrame(wx.Frame):
     def GetPassword(self, config, salt):
         pass_stored = ""
         try:
-            passwordentry = PasswordDialog(self, -1, "Enter password", pass_stored)        
+            if self.language == 'en':
+                passwordentry = PasswordDialog(self, -1, "Enter password", pass_stored, self.language)
+            else:
+                passwordentry = PasswordDialog(self, -1, u"パスワードを入力してください", pass_stored, self.language)
             try:
                 pass_stored = config.get('Config', 'password')
                 passwordentry.SetChecked(True)
@@ -396,6 +529,7 @@ THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES, INC
     def OnStartCollecting(self, e):
         global guithread, configfile
         self.filemenu.Enable(1, False)
+        self.filemenu.Enable(4, False)
         self.btnStart.Disable()
         #try:
         config = ConfigParser.ConfigParser()
@@ -404,17 +538,17 @@ THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES, INC
         except ConfigParser.DuplicateSectionError:
             pass
         config.read(configfile)
-        
+
         # extract salt from the dir
         dirparts = self.control.GetValue().split("\\")
         # set the salt to the users directory name for the character.  Not 100% but good enough to salt with.
-        salt = ""
+        self.salt = ""
         if dirparts[len(dirparts)-1] == "":
-            salt = dirparts[len(dirparts) - 3]
+            self.salt = dirparts[len(dirparts) - 3]
         else:
-            salt = dirparts[len(dirparts) - 2]
-        password, savepass = self.GetPassword(config, salt)
-        if self.CheckPassword(self.charname.GetValue(), salt, password):
+            self.salt = dirparts[len(dirparts) - 2]
+        password, savepass = self.GetPassword(config, self.salt)
+        if self.CheckPassword(self.charname.GetValue(), self.salt, password):
             if savepass:
                 config.set('Config', 'password', password)
             else:
@@ -423,10 +557,14 @@ THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES, INC
                 except ConfigParser.NoSectionError:
                     pass
         else:
-            dlg = wx.MessageDialog( self, "The password provided does not match.", "Invalid Password", wx.OK)
+            if self.language == 'en':
+                dlg = wx.MessageDialog( self, "The password provided does not match.", "Invalid Password", wx.OK)
+            else:
+                dlg = wx.MessageDialog( self, u"提供されたパスワードが一致しません。", u"無効なパスワード", wx.OK)
             dlg.ShowModal() # Show it
             dlg.Destroy() # finally destroy it when finished.
             self.filemenu.Enable(1, True)
+            self.filemenu.Enable(4, True)
             self.btnStart.Enable()
             return
                 
@@ -548,7 +686,11 @@ def main():
                 guithread = GUIThread(None, None, None) 
                 doloop = 1
                 app = wx.App()
-                configlang = config.get('Config', 'language')
+                configlang = 'en'
+                try:
+                    configlang = config.get('Config', 'language')
+                except:
+                    pass
                 if versioncheck(language=configlang):
                     Popen("setup.exe", shell=False) # start reloader
                     return
@@ -573,7 +715,8 @@ def main():
                     else:
                         break
                 return
-            except Exception, e:
+            except Exception as e:
+                print e
                 return
         if args[0] == '?' or args[0] == 'h' or args[0] == '/?' or args[0] == '/h' or args[0] == '/help' or args[0] == 'help' or args[0] == '-h' or args[0] == '-help' or args[0] == '--help' or len(args) < 4:
             print "\r\nUsage: CharacterName password PathToLogFiles RunForever[True/False] FilterByMonster[optional]"
@@ -760,6 +903,7 @@ class ffxiv_parser:
             # trim the first char since it is likely a 0 that was written strangely
             # if its longer than 3 then its likely a crlf on a log border so
             # let it fall out
+            # *** NOTE: Since going to the binary read version this should never happen.
             if len(code) > 2:
                 code = code[1:]
             logvalue = logitem[logitem.find(':') + 1:]
