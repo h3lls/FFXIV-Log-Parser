@@ -45,7 +45,10 @@ import traceback
 import hashlib
 import ConfigParser
 import wx
+import wx.richtext
 from threading import Thread 
+import pickle
+import decimal
 import datetime
 import sys
 import os
@@ -59,7 +62,8 @@ import uuid
 import shutil
 import struct
 import locale 
- 
+from Crypto.Cipher import Blowfish
+
 from subprocess import Popen
 import wx.lib.agw.hyperlink as hl
 
@@ -79,14 +83,23 @@ if os.path.exists('config/') and not os.path.exists('logparser.cfg'):
 else:
     configfile = 'logparser.cfg'
 
-version = 4.0
+version = 4.2
 charactername = ""
 doloop = 0
+app = None
 
 # Store the last log parsed
 lastlogparsed = 0
 
 guithread = None
+
+def nullstrip(s):
+    # Return a string truncated at the first null character.
+    try:
+        s = s[:s.index('\x00')]
+    except ValueError:  # No nulls were found, which is okay.
+        pass
+    return s
 
 class PasswordDialog(wx.Dialog):
     def __init__(self, parent, id, title, defaultPassword, language):
@@ -150,7 +163,119 @@ class ChangeCharacterNameDialog(wx.Dialog):
 
     def GetPassword(self):
         return self.password.GetValue()
+
+class ChatViewer(wx.Frame):
+
+    title = "Chat Viewer"
+
+    def __init__(self):
+        wx.Frame.__init__(self, wx.GetApp().TopWindow, title=self.title, size=(500,400))
+        self.SetBackgroundColour((240,240,240))
+        try:
+            self.SetIcon(wx.Icon("icon.ico", wx.BITMAP_TYPE_ICO))
+        except Exception as e:
+            print e
+        self.Bind(wx.EVT_CLOSE, self.OnClose)
+        self.sb = self.CreateStatusBar() # A Statusbar in the bottom of the window
+        panel = wx.Panel(self, -1)
+        static = wx.StaticText(panel, -1, 'Select a date/time to load the chat data.', (5,12), (350, 15))
+        self.loadingMsg = wx.StaticText(panel, -1, '', (360,12), (30, 15))
+        self.datelist = wx.ListBox(panel, -1, pos=(0, 40), size=(140, 300))
+        self.Bind(wx.EVT_LISTBOX, self.OnDateSelected, self.datelist)
+        self.logWindow = wx.richtext.RichTextCtrl(panel, -1, pos=(132,40), size=(250, 300), style=wx.EXPAND | wx.TE_MULTILINE)
+        self.logWindow.SetBackgroundColour((243, 246, 237))
+        self.LoadDates()
+        self.Bind(wx.EVT_SIZE, self.OnSize)
+
+    def OnDateSelected(self, event):
+        global app
+        self.loadingMsg.SetLabel("Loading...")
+        chat_types = {
+            '01': self.WriteSay, # say
+            '02': self.WriteShout, # shout
+            '03': self.WriteTell, # sending tell
+            '04': self.WriteParty, # party
+            '05': self.WriteLinkshell, # linkshell
+            '06': self.WriteLinkshell, # linkshell
+            '07': self.WriteLinkshell, # linkshell
+            '10': self.WriteSay, # say messages by others?
+            '0D': self.WriteTell, # get tell
+            '0F': self.WriteLinkshell, # linkshell
+            '0E': self.WriteLinkshell, # linkshell
+            '0F': self.WriteLinkshell, # linkshell
+            '19': self.WriteEmote, # other emote
+            '1B': self.WriteEmote # emote
+            }
+        filename = os.path.join('chatlogs', event.GetString() + '.chat')
+        filesize = os.path.getsize(filename)
+        with open(filename, 'rb') as f:
+            chatdata = pickle.load(f)
+        self.logWindow.Clear()
+        self.logWindow.Freeze()
         
+        idx = 0.0
+        ttllen = len(chatdata)
+        for chatitem in chatdata:
+            idx = idx + 1
+            if (idx % 100) == 0:
+                self.loadingMsg.SetLabel("Loading... %i%%" % ((idx / ttllen) * 100.0))
+                app.Yield()
+            try:
+                chat_types[chatitem[0]](chatitem[1], chatitem[2])
+            except KeyError as e:
+                self.WriteSay(chatitem[1], chatitem[2])
+        self.logWindow.Thaw()
+        self.loadingMsg.SetLabel("")
+        
+    def OnSize(self, event):
+        event.Skip()        
+        size = event.GetSize()
+        self.logWindow.SetSize((size[0] - 150, size[1] - 102))
+        self.datelist.SetSize((130, size[1] - 102))
+        
+    def LoadDates(self):
+        # This loads all date files into the listbox.
+        chatdates = [(os.stat(i).st_mtime, i) for i in glob.glob(os.path.join('chatlogs', '*.chat'))]
+        chatdates.sort(reverse=True)
+        for date in chatdates:
+            filename = os.path.basename(os.path.splitext(date[1])[0])
+            self.datelist.Append(filename)
+
+    def WriteEmote(self, charname, text):
+        self.logWindow.BeginTextColour((80, 50, 50))
+        self.logWindow.WriteText("%s\r" % (text))
+        self.logWindow.EndTextColour()
+
+    def WriteParty(self, charname, text):
+        self.logWindow.BeginTextColour((70, 70, 170))
+        self.logWindow.WriteText("<%s> %s\r" % (charname, text))
+        self.logWindow.EndTextColour()
+
+    def WriteTell(self, charname, text):
+        self.logWindow.BeginTextColour((190, 70, 70))
+        self.logWindow.WriteText("%s whispers %s\r" % (charname, text))
+        self.logWindow.EndTextColour()
+
+    def WriteShout(self, charname, text):
+        self.logWindow.BeginTextColour((140, 50, 50))
+        self.logWindow.WriteText("%s shouts %s\r" % (charname, text))
+        self.logWindow.EndTextColour()
+        
+    def WriteLinkshell(self, charname, text):
+        self.logWindow.BeginTextColour((50, 140, 50))
+        self.logWindow.BeginBold()
+        self.logWindow.WriteText("<" + charname + "> ")
+        self.logWindow.EndBold()
+        self.logWindow.WriteText(text + " - linkshell\r")
+        self.logWindow.EndTextColour()
+
+    def WriteSay(self, charname, text):
+        self.logWindow.WriteText("%s says %s\r" % (charname, text))
+        
+
+    def OnClose(self, e):
+        self.Destroy();
+
 class MainFrame(wx.Frame):
     def SaveLanguageSetting(self, lang):
         global configfile
@@ -216,6 +341,10 @@ class MainFrame(wx.Frame):
         self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=%s&lang=jp" % (self.charname.GetValue()))
         self.SaveLanguageSetting('jp')
 
+    def OpenChatViewer(self, event):
+        self.chatviewer = ChatViewer()
+        self.chatviewer.Show()
+        
     def __init__(self, parent, title):
         global configfile
         wx.Frame.__init__(self, parent, title=title, size=(400,314))
@@ -250,11 +379,16 @@ class MainFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.SetEnglish, id=11)
         self.Bind(wx.EVT_MENU, self.SetJapanese, id=12)
 
+        # Setup chat menu
+        self.chatmenu= wx.Menu()
+        self.chatviewerMenu = self.chatmenu.Append(13, "Chat &Viewer","Opens the chat viewer window")
+        self.Bind(wx.EVT_MENU, self.OpenChatViewer, id=13)
 
         # Creating the menubar.
         self.menuBar = wx.MenuBar()
         self.menuBar.Append(self.filemenu,"&File") # Adding the "filemenu" to the MenuBar
         self.menuBar.Append(self.languagemenu,"&Language") # Adding the "filemenu" to the MenuBar
+        self.menuBar.Append(self.chatmenu,"&Chat") # Adding the "filemenu" to the MenuBar
         self.SetMenuBar(self.menuBar)  # Adding the MenuBar to the Frame content.
 
         panel = wx.Panel(self, -1)
@@ -671,7 +805,7 @@ class GUIThread(Thread):
 
 def main():
     #try:    
-        global doloop, guithread, configfile, lastlogparsed
+        global doloop, guithread, configfile, lastlogparsed, app
         args = sys.argv[1:]
 
         config = ConfigParser.ConfigParser()
@@ -739,7 +873,7 @@ def main():
             l.sort()
             diff = set(l).difference( set(prev) )
             if len(diff) > 0:
-                prev = l			
+                prev = l            
                 files = [i[1] for i in sorted(diff)]
                 try:
                     readLogFile(files, charactername, password=password, logmonsterfilter=logmonsterfilter)
@@ -807,7 +941,8 @@ class ffxiv_parser:
         self.language = language
         self.defaultmonster = {"datetime":"", "monster":"", "monstermiss":0, "othermonstermiss":0, "damage":[], "miss":0, "hitdamage":[], "otherdamage":[], "othermiss":[], "spells":[], "healing":[], "otherhealing":[], "otherhitdamage":[], "skillpoints":0, "class":"", "exp":0}
         self.defaultcrafting = {"datetime":"", "item":"", "actions":[], "ingredients":[], "success":0, "skillpoints":0, "class":"", "exp":0}
-        self.characterdata = {"charactername":"", "deaths":[]}
+        self.characterdata = {"charactername":""}
+        self.deathsdata = {"charactername":"", "deaths":[]}
         self.monsterdata = []
         self.craftingdata = []
         self.gatheringdata = []
@@ -945,8 +1080,31 @@ class ffxiv_parser:
 
 class english_parser(ffxiv_parser):
     
+    def savealllogs(self):
+        if len(self.alllog) == 0:
+            return
+        if not os.path.exists('chatlogs'):
+            os.mkdir('chatlogs')
+        with open(os.path.join('chatlogs', '--Everything--.chat'), 'wb') as chatfile:
+            pickle.dump(self.alllog, chatfile)
+        self.alllog = []
+        
+    def close(self):
+        if len(self.chatlog) == 0:
+            return
+        if self.prevchatdate != None:
+            if not os.path.exists('chatlogs'):
+                os.mkdir('chatlogs')
+            with open(os.path.join('chatlogs', self.prevchatdate + '.chat'), 'wb') as chatfile:
+                pickle.dump(self.chatlog, chatfile)
+            self.chatlog = []
+
     def __init__(self): 
         ffxiv_parser.__init__(self, "en")
+        self.prevchatdate = None
+        self.chatlog = []
+        self.alllog = []
+        
         self.craftingcomplete = 0
         self.autotranslateheader = HexToByte('02 2E')
         #TODO: Move this to a bin file later to avoid the hextobyte and crap in the source.
@@ -1507,9 +1665,40 @@ class english_parser(ffxiv_parser):
             HexToByte('02 2E 03 14 2A 03'):"(Fisher)",            
             }
 
-    def printCrafting(self, currentcrafting):
-        #self.craftingdata
+    def monsterIsNM(self, monster):
+        NMList = ['alux', 'bardi', 'barometz', 'bloodthirsty wolf', 'bomb baron', 'daddy longlegs', 'dodore', 'downy dunstan', 'elder mosshorn', 'escaped goobbue', 'frenzied aurelia', 'gluttonous gertrude', 'great buffalo', 'haughtpox bloatbelly', 'jackanapes', 'mosshorn billygoat', 'mosshorn nannygoat', 'nest commander', 'pyrausta', 'queen bolete', 'sirocco', 'slippery sykes', 'uraeus']
+        return monster.lower() in NMList
+            
+    def printCrafting(self, currentcrafting):        
         #print currentcrafting
+        self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
+        totalprogress = 0
+        finalquality = 0
+        finaldurability = 0
+        for action in currentcrafting["actions"]:
+            if len(action[1]) > 0:
+                totalprogress = totalprogress + action[1][0]
+            if len(action[2]) > 0:
+                finaldurability = finaldurability + action[2][0]
+            if len(action[3]) > 0:
+                finalquality = finalquality + action[3][0]
+        itemsused = ""
+        if len(currentcrafting["ingredients"]) == 0:
+            itemsused = "Local levequests do not use ingredients."
+        else:
+            inglist = []
+            first = True
+            for item in currentcrafting["ingredients"]:
+                if first:
+                    itemsused = str(item[1]) + " x " + item[0]
+                    first = False
+                else:
+                    itemsused = itemsused + ", " + str(item[1]) + " x " + item[0]
+        if currentcrafting["success"]:
+            print "Completed Recipe for %s as %s\nTotal Progress: %i\nFinal Quality Added: %i\nFinal Durability Lost: %i\nIngredients Used: %s\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentcrafting["item"], currentcrafting["class"], totalprogress, finalquality, finaldurability, itemsused, currentcrafting["exp"], currentcrafting["skillpoints"], currentcrafting["datetime"])
+        else:
+            print "Failed Recipe as %s\nTotal Progress: %i\nFinal Quality Added: %i\nFinal Durability Lost: %i\nIngredients Used: %s\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentcrafting["class"], totalprogress, finalquality, finaldurability, itemsused, currentcrafting["exp"], currentcrafting["skillpoints"], currentcrafting["datetime"])
+        self.craftingdata.append(currentcrafting)
         #raw_input("")
         return
 
@@ -1533,6 +1722,7 @@ class english_parser(ffxiv_parser):
             healingavgcount = 0
             absorbavg = 0
             absorbavgcount = 0
+            totaldamage = 0
             for otherdamage in currentmonster["otherdamage"]:
                 if otherdamage[0] == '':
                     continue
@@ -1558,6 +1748,7 @@ class english_parser(ffxiv_parser):
             for damage in currentmonster["damage"]:
                 if damage[0] == '':
                     continue
+                totaldamage = totaldamage + int(damage[0])
                 if damage[1] == True:
                     criticalavg = criticalavg + int(damage[0])
                     criticalavgcount = criticalavgcount + 1
@@ -1583,23 +1774,26 @@ class english_parser(ffxiv_parser):
             if currentmonster["miss"] > 0:
                 hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
                 hitpercent = (100 - hitpercent)
-            print "Defeated %s as %s\nHit %%: %i%%\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nHealing Avg: %i\nAbsorb Avg: %i\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, healingavg, absorbavg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
+            print "Defeated %s as %s\nHit %%: %i%%\nTotal Damage: %i\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nHealing Avg: %i\nAbsorb Avg: %i\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldamage, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, healingavg, absorbavg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
             self.monsterdata.append(currentmonster)
-            #raw_input('absorb')
-
-            #if len(monsterdata) > 20:
-            #    uploadToDB()
+            self.defeated = False
+            self.spset = False
+            self.expset = False
+            self.currentmonster = copy.deepcopy(self.defaultmonster)
 
     def useitem(self, logitem):
+        #print "Use Item: " + logitem
         if self.craftingcomplete == 1:
             self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
             self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
+            #print self.currentcrafting["datetime"]
             self.craftingcomplete = 0
         if logitem.find("Standard Synthesis") != -1:
             # store previous value if valid:
             if self.synthtype != "":
                 self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
+                #print self.currentcrafting["actions"]
                 self.progress = []
                 self.durability = []
                 self.quality = []
@@ -1626,6 +1820,10 @@ class english_parser(ffxiv_parser):
                 ingcount = 1
             elif logitem.find("Touch Up") != -1:
                 return
+            elif logitem.find("Preserve") != -1:
+                return
+            elif logitem.find("Blinding Speed") != -1:
+                return
             else:
                 try:
                     ingcount = int(logitem.split(" ")[2])
@@ -1637,12 +1835,14 @@ class english_parser(ffxiv_parser):
             else:
                 ingredient = " ".join(logitem.split(" ")[3:])[:-1]
             self.currentcrafting["ingredients"].append([ingredient, ingcount])
-    
+            
     def engaged(self, logitem):
         if self.craftingcomplete == 1:
+            #print logitem
             self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
             self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
+            #print self.currentcrafting["datetime"]
             self.craftingcomplete = 0
         if logitem.find("You cannot change classes") != -1 or logitem.find("Levequest difficulty") != -1:
             return
@@ -1650,6 +1850,7 @@ class english_parser(ffxiv_parser):
         self.spset = False
         self.expset = False
         self.currentmonster = copy.deepcopy(self.defaultmonster)
+
         self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
         self.currentmonster["monster"] = logitem[logitem.find("The ") +4:logitem.find(" is")]
         self.currentmonster["monster"] = self.currentmonster["monster"].split('\'')[0]
@@ -1667,8 +1868,8 @@ class english_parser(ffxiv_parser):
         #tabkey = '02 2E 05 0F F2 07 6F 03'
         self.echo("chatmessage " + code + logitem, 1)
         if (code == '1B') or (code == '19'):
-            user = ' '.join(logitem.split(' ')[0:2])
-            message = logitem
+            user = ' '.join(logitem.split(' ')[0:2]).strip()
+            message = logitem.strip()
         else:
             logitemparts = logitem.split(":")
             user = logitemparts[0].strip()
@@ -1697,7 +1898,35 @@ class english_parser(ffxiv_parser):
                 if not hasreplacement:
                     # Save this up to the server so we can investigate later and add it.
                     pass
-                self.echo("Message: " + message, 1)
+                #self.chatviewer.WriteLinkshell(user, message)
+            chatdate = time.strftime("%m-%d-%y %H-%M-%S",time.gmtime(self.logfiletime))
+            #if self.prevchatdate != chatdate:
+            #    if self.prevchatdate != None:
+            #        if not os.path.exists('chatlogs'):
+            #            os.mkdir('chatlogs')
+            #        with open(os.path.join('chatlogs', self.prevchatdate, '.chat'), 'wb') as chatfile:
+            #            pickle.dump(self.chatlog, chatfile)
+            #        self.chatlog = []
+            self.prevchatdate = chatdate 
+            self.chatlog.append((code, nullstrip(user), message))
+            self.alllog.append((code, nullstrip(user), message))
+            '''
+            '01': self.parse_chatmessage, # say
+            '02': self.parse_chatmessage, # shout
+            '03': self.parse_chatmessage, # sending tell
+            '04': self.parse_chatmessage, # party
+            '05': self.parse_chatmessage, # linkshell
+            '06': self.parse_chatmessage, # linkshell
+            '07': self.parse_chatmessage, # linkshell
+            '10': self.parse_chatmessage, # say messages by others?
+            '0D': self.parse_chatmessage, # get tell
+            '0F': self.parse_chatmessage, # linkshell
+            '0E': self.parse_chatmessage, # linkshell
+            '0F': self.parse_chatmessage, # linkshell
+            '19': self.parse_chatmessage, # other emote
+            '1B': self.parse_chatmessage, # emote
+            '''
+            self.echo("Code: %s User: %s Message: %s" % (code, user, message), 1)
             #raw_input("tab")
         except:
             traceback.print_exc(file=sys.stdout)
@@ -1712,7 +1941,7 @@ class english_parser(ffxiv_parser):
         self.echo("other abilities " + logitem, 1)
 
     def parse_othereffect(self, code, logitem):
-        if logitem.find("grants you") != -1:	
+        if logitem.find("grants you") != -1:    
             effect = logitem[logitem.find("effect of ") +10:-1]
         self.echo("other abilities " + logitem, 1)
 
@@ -1859,7 +2088,7 @@ class english_parser(ffxiv_parser):
             monster = logitem[logitem.find("the ") +4:logitem.find(" from the")]
         else:
             monster = logitem[logitem.find("the ") +4:logitem.find(" for")]
-        if monster == self.currentmonster["monster"]:						
+        if monster == self.currentmonster["monster"]:                        
             if logitem.find("Critical!") != -1:
                 critical = 1
             else:
@@ -1897,7 +2126,7 @@ class english_parser(ffxiv_parser):
                 monster = logitem[logitem.find("the ") +4:logitem.find(" from the")]
             else:
                 monster = logitem[logitem.find("the ") +4:logitem.find(" for")]
-            if monster == self.currentmonster["monster"]:						
+            if monster == self.currentmonster["monster"]:                        
                 if logitem.find("Critical!") != -1:
                     critical = 1
                 else:
@@ -1909,32 +2138,37 @@ class english_parser(ffxiv_parser):
         self.echo("damagedealt " + logitem, 1)
 
     def parse_craftingsuccess(self, code, logitem):
-        #print logitem
         # Crafting success
         if logitem.find("You create") != -1:
+            #print "Crafting Success: " + logitem
             if logitem.find(" of ") != -1:
                 self.currentcrafting["item"] = logitem[logitem.find(" of ")+4:-1]
             else:
                 self.currentcrafting["item"] = logitem[logitem.find(" a ")+3:-1]
             self.currentcrafting["success"] = 1
+            self.craftingcomplete = 1
         # botched it
-        if logitem.find("botch") != -1:
+        if logitem.find("You botch") != -1:
+            #print "Crafting Fail: " + logitem
             self.currentcrafting["success"] = 0
-        self.craftingcomplete = 1
+            self.craftingcomplete = 1
         
         self.echo("crafting success " + logitem, 1)
 
     def parse_defeated(self, code, logitem):
         if self.craftingcomplete == 1:
+            #print "Defeated:" + logitem
             self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
             self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
+            #print self.currentcrafting["datetime"]
             self.craftingcomplete = 0
         if logitem.find("group") != -1:
             return
         if logitem.find("defeats you") != -1:
             # You were killed...
-            self.characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "class":self.currentmonster["class"]})
+            self.deathsdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "class":self.currentmonster["class"]})
+            #self.characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "class":self.currentmonster["class"]})
             #0045::The fat dodo defeats you.
             return
         if logitem.find("defeat") != -1:
@@ -1942,6 +2176,13 @@ class english_parser(ffxiv_parser):
             if monster != self.currentmonster["monster"]:
                 return
             self.defeated = True
+        if self.monsterIsNM(self.currentmonster["monster"]) and self.defeated:
+            self.currentmonster["skillpoints"] = 0
+            self.currentmonster["exp"] = 0
+            self.defeated = False
+            self.spset = False
+            self.expset = False
+            self.printDamage(self.currentmonster)
 
         self.echo("defeated " + logitem, 1)
 
@@ -1963,6 +2204,7 @@ class english_parser(ffxiv_parser):
                 self.currentcrafting["skillpoints"] = int(logitemparts[2])
                 self.currentcrafting["class"] = logitemparts[3]
                 self.spset = True
+            
         if self.defeated and self.spset and self.expset:
             self.defeated = False
             self.spset = False
@@ -1986,21 +2228,22 @@ class english_parser(ffxiv_parser):
         elif logitem.find("You use") != -1:
             self.useitem(logitem)
         elif logitem.find("Progress") != -1:
+            #print logitem
             # save progress as array of % and it was an increase or decrease
             if logitem.find("increases") != -1:
-                self.progress = [logitem[logitem.find("by ") +3:-2], 1]
+                self.progress = [int(logitem[logitem.find("by ") +3:-2]), 1]
             else:
-                self.progress = [logitem[logitem.find("by ") +3:-2], 0]
+                self.progress = [int(logitem[logitem.find("by ") +3:-2]), 0]
         elif logitem.find("Durability") != -1:
             if logitem.find("increases") != -1:
-                self.durability = [logitem[logitem.find("by ") +3:-1], 1]
+                self.durability = [int(logitem[logitem.find("by ") +3:-1]), 1]
             else:
-                self.durability = [logitem[logitem.find("by ") +3:-1], 0]
+                self.durability = [int(logitem[logitem.find("by ") +3:-1]), 0]
         elif logitem.find("Quality") != -1:
             if logitem.find("increases") != -1:
-                self.quality = [logitem[logitem.find("by ") +3:-1], 1]
+                self.quality = [int(logitem[logitem.find("by ") +3:-1]), 1]
             else:
-                self.quality = [logitem[logitem.find("by ") +3:-1], 0]
+                self.quality = [int(logitem[logitem.find("by ") +3:-1]), 0]
         else:
             pass        
             
@@ -2780,7 +3023,7 @@ class japanese_parser(ffxiv_parser):
         self.echo("other abilities " + logitem, 1)
 
     def parse_othereffect(self, code, logitem):
-        if logitem.find("grants you") != -1:	
+        if logitem.find("grants you") != -1:    
             effect = logitem[logitem.find("effect of ") +10:-1]
         self.echo("other abilities " + logitem, 1)
 
@@ -2983,7 +3226,7 @@ class japanese_parser(ffxiv_parser):
         # we can ignore From the left / right / back because of the formatting
         # may want to record that later but not really needed for any useful stats
         monster = logitem[logitem.find(u"は") +1:logitem.find(u"に")]
-        if monster == self.currentmonster["monster"]:						
+        if monster == self.currentmonster["monster"]:                        
             if logitem.find(u"クリティカル！") != -1:
                 critical = 1
             else:
@@ -3025,11 +3268,12 @@ class japanese_parser(ffxiv_parser):
             self.craftingcomplete = 0
         if logitem.find(u"一群") != -1:
             return
-        if logitem.find("defeats you") != -1:
-            # You were killed...
-            self.characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "class":self.currentmonster["class"]})
-            #0045::The fat dodo defeats you.
-            return
+        #if logitem.find("defeats you") != -1:
+        #    # You were killed...
+        #    self.deathsdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "class":self.currentmonster["class"]})
+        #    #self.characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "class":self.currentmonster["class"]})
+        #    #0045::The fat dodo defeats you.
+        #    return
         if logitem.find(u"を倒した。") != -1:
             monster = logitem[:logitem.find(u"を倒した。")]
             if monster != self.currentmonster["monster"]:
@@ -3109,8 +3353,9 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
     for logfilename in paths:
         try:
             logfiletime = os.stat(logfilename).st_mtime
-            if logfiletime < lastlogparsed:
-                continue
+            if not os.path.exists('newinstall'):
+                if logfiletime < lastlogparsed - 5000:
+                    continue
             logsparsed = logsparsed + 1
             en_parser.setLogFileTime(logfiletime)
             jp_parser.setLogFileTime(logfiletime)
@@ -3145,8 +3390,10 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
                     traceback.print_exc(file=sys.stdout)
                 if isrunning:
                     if not isrunning():
-                        return
+                        return                
                 continue
+            en_parser.close()
+
         finally:            
             if logfile:
                 logfile.close()
@@ -3154,13 +3401,148 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
         config.set('Config', 'lastlogparsed', lastlogparsed)
         with open(configfile, 'wb') as openconfigfile:
             config.write(openconfigfile)
+    if os.path.exists('newinstall'):
+        os.remove('newinstall')
+    en_parser.savealllogs()
     # uncomment for debugging to disable uploads
-    # return
+    #return
     if logsparsed > 0:
-        uploadToDB(password, [en_parser, jp_parser])
+        uploadToDB2(password, [en_parser, jp_parser])
     else:
         print "No new log data to parse.  Don't you have some leves to do?"
 
+def uploadDeaths(header, deathdata):
+    if len(deathdata["deaths"]) > 0:
+        #print deathdata
+        #return
+        if header["language"] == "en":
+            print "Uploading deaths data."
+        else:
+            print "アップロードの死亡データ。"
+        header["deaths"] = deathdata
+        jsondata = json.dumps(header)
+        #print jsondata
+        url = doUpload(jsondata, 'http://ffxivbattle.com/postdeaths.php')
+        if url == None:
+            return
+        if header["language"] == "en":
+            print "Total New Character Deaths: %d\n" % int(url["deaths"])
+        else:
+            print u"合計新キャラクター死亡: %d" % int(url["deaths"])
+
+def uploadBattles(header, battledata):
+    if len(battledata) > 0:
+        end = 100
+        totalbattlerecords = 0
+        recordsimported = 0
+        updatedrecords = 0
+        url = None
+        for start in range(0, len(battledata), 100):
+            if end > len(battledata):
+                end = len(battledata)
+            tmpbattledata = header
+            tmpbattledata["battle"] = battledata[start:end]
+            if header["language"] == "en":
+                print "Uploading battle data. Records %d to %d." % (start, end)
+            else:
+                print "アップロードの戦闘データ。レコード%d〜%d。" % (start, end)
+            jsondata = json.dumps(tmpbattledata)
+            url = doUpload(jsondata, 'http://ffxivbattle.com/postbattles.php')
+            if url == None:
+                return
+            end = end+100
+            try:
+                totalbattlerecords = int(url["totalbattlerecords"])
+                recordsimported = recordsimported + int(url["recordsimported"])
+                updatedrecords = updatedrecords + int(url["updatedrecords"])
+            except:
+                if parser.getlanguage() == "en":
+                    print "Did not understand the response from the server."
+                else:
+                    print u"サーバーからの応答を理解できませんでした。"
+        if header["language"] == "en":
+            print "\nTotal Global Battle Records: %d" % totalbattlerecords
+            print "Records Sent (Duplicates ignored): %d" % recordsimported
+            print "Records Uploaded To Website: %d" % updatedrecords
+            if int(updatedrecords) > 0:
+                print "\nYour data has been uploaded, you can view it at: \n\n%s" % url["url"] 
+            else:
+                print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"] 
+        else:
+            print u"\n合計グローバルバトルレコード: %d" % totalbattlerecords
+            print u"レコード送信（無視される重複）: %d" % recordsimported
+            print u"ウェブサイトにアップロードされたレコード: %d" % updatedrecords
+            if int(updatedrecords) > 0:
+                print u"\nあなたのデータはあなたがそれを見ることができる、アップロードされています： \n\n%s" % url["url"] 
+            else:
+                print u"\nいいえ、新しいレコード。あなたはあなたのデータを表示することができます： \n\n%s\n" % url["url"] 
+    
+def uploadCrafting(header, craftingdata):
+    if len(craftingdata) > 0:
+        #print craftingdata
+        #return
+        end = 100
+        craftingcount = 0
+        url = None
+        for start in range(0, len(craftingdata), 100):
+            if end > len(craftingdata):
+                end = len(craftingdata)
+            tmpcraftingdata = header
+            tmpcraftingdata["crafting"] = craftingdata[start:end]
+            if header["language"] == "en":
+                print "Uploading crafting data. Records %d to %d." % (start, end)
+            else:
+                print "アップロードは、データを意図的に作成。レコード%d〜%d。" % (start, end)
+            jsondata = json.dumps(tmpcraftingdata)
+            url = doUpload(jsondata, 'http://ffxivbattle.com/postcrafting.php')
+            if url == None:
+                return
+            end = end+100
+            try:
+                craftingcount = int(url["craftingcount"])
+            except:
+                if parser.getlanguage() == "en":
+                    print "Did not understand the response from the server."
+                else:
+                    print u"サーバーからの応答を理解できませんでした。"
+        if header["language"] == "en":
+            print "Crafting Records Uploaded To Website: %d\n" % craftingcount
+        else:
+            print u"ウェブサイトにアップロード記録クラフト: %d\n" % craftingcount
+    
+def uploadToDB2(password="", parsers=[]):
+    for parser in parsers:
+        header = {"version":version,"language":parser.getlanguage(),"password":password, "character":parser.characterdata}        
+        uploadDeaths(header, parser.deathsdata)
+        uploadCrafting(header, parser.craftingdata)
+        uploadBattles(header, parser.monsterdata)
+        
+        # Clear records for next run
+        parser.monsterdata = []
+        parser.craftingdata = []
+        parser.gatheringdata = []
+        parser.characterdata["deaths"] = []
+        #numcrafting = uploadCrafting(header["crafting"] = parser.craftingdata)
+        '''
+        if parser.getlanguage() == "jp":
+            print u"\n合計グローバルバトルレコード: %d" % totalbattlerecords
+            print u"合計新キャラクター死亡: %d" % deaths
+            print u"レコード送信（無視される重複）: %d" % recordsimported
+            print u"ウェブサイトにアップロードされたレコード: %d" % updatedrecords
+            if int(updatedrecords) > 0:
+                print u"\nあなたのデータはあなたがそれを見ることができる、アップロードされています： \n\n%s" % url["url"] 
+            else:
+                print u"\nいいえ、新しいレコード。あなたはあなたのデータを表示することができます： \n\n%s\n" % url["url"] 
+        elif parser.getlanguage() == "en":
+            print "\nTotal Global Battle Records: %d" % totalbattlerecords
+            print "Total New Character Deaths: %d" % deaths
+            print "Records Sent (Duplicates ignored): %d" % recordsimported
+            print "Records Uploaded To Website: %d" % updatedrecords
+            if int(updatedrecords) > 0:
+                print "\nYour data has been uploaded, you can view it at: \n\n%s" % url["url"] 
+            else:
+                print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"] 
+        '''
 def uploadToDB(password="", parsers=[]):
     global doloop
     for parser in parsers:
@@ -3194,7 +3576,7 @@ def uploadToDB(password="", parsers=[]):
                 for start in range(0, len(parser.monsterdata), 100):
                     if end > len(parser.monsterdata):
                         end = len(parser.monsterdata)
-                    tmpdata = {"version": version, "language": parser.getlanguage(), "password": password, "character": parser.characterdata, "battle": parser.monsterdata[start:end], "crafting":parser.craftingdata, "gathering":parser.gatheringdata}
+                    tmpdata = {"version": version, "language": parser.getlanguage(), "password": password, "character": parser.characterdata, "battle": parser.monsterdata[start:end]}
                     if parser.getlanguage() == "en":
                         print "Uploading log data. Records %d to %d." % (start, end)
                     else:
@@ -3214,6 +3596,8 @@ def uploadToDB(password="", parsers=[]):
                             print "Did not understand the response from the server."
                         else:
                             print u"サーバーからの応答を理解できませんでした。"
+                #for start in range(0, len(parser.craftingdata), 100):
+                #    tmpdata = {"version":version, "language":parser.getlanguage(), "password": password, "character": parser.characterdata, "crafting":parser.craftingdata, "gathering":parser.gatheringdata                    
                 if parser.getlanguage() == "jp":
                     print u"\n合計グローバルバトルレコード: %d" % totalbattlerecords
                     print u"合計新キャラクター死亡: %d" % deaths
@@ -3243,9 +3627,9 @@ def uploadToDB(password="", parsers=[]):
         parser.gatheringdata = []
         parser.characterdata["deaths"] = []
 
-def doUpload(jsondata):
+def doUpload(jsondata, url):
     try:
-        url = 'http://ffxivbattle.com/postlog.php'
+        #url = 'http://ffxivbattle.com/postlog-test.php'
         user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
         values = {'jsondata' : jsondata }
         headers = { 'User-Agent' : "H3lls Log Parser v %s" % (str(version)),
