@@ -199,6 +199,8 @@ class ChatViewer(wx.Frame):
 
     def __init__(self):
         wx.Frame.__init__(self, wx.GetApp().TopWindow, title=self.title, size=(500,400))
+        if os.path.exists(os.path.join('chatlogs', '--Everything--.chat')):
+            os.remove(os.path.join('chatlogs', '--Everything--.chat'))
         self.currdates = []
         self.chat_types = {
             '01': self.WriteSay, # say
