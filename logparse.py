@@ -818,7 +818,7 @@ THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES, INC
         #    print e
         try:
             self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=" + self.charname.GetValue())
-            guithread.updatevalues(self.control.GetValue(), self.charname.GetValue(), self.OnStatus, completecallback=self.threadcallback, password=password, chatviewer=self.chatviewer)
+            guithread.updatevalues(self.control.GetValue(), self.charname.GetValue(), self.OnStatus, completecallback=self.threadcallback, password=password)
             guithread.daemon = False
             guithread.start()
         except:
@@ -862,14 +862,13 @@ class GUIThread(Thread):
         self.exitready = 0
         Thread.__init__(self) 
 
-    def updatevalues(self, logpath, charactername, status, completecallback=None, password="", chatviewer=None):
+    def updatevalues(self, logpath, charactername, status, completecallback=None, password=""):
         self.stopped = 0
         self.logpath = logpath
         self.charactername = charactername
         self.status = status
         self.completecallback = completecallback
         self.password = password
-        self.chatviewer = chatviewer
         
     def exit(self):
         self.stopped = 1
@@ -899,7 +898,7 @@ class GUIThread(Thread):
                         files = [i[1] for i in l]
                     else:
                         files = [i[1] for i in l[len(l)-3:]]
-                    readLogFile(files, self.charactername, isrunning=self.is_running, password=self.password, chatviewer=self.chatviewer)
+                    readLogFile(files, self.charactername, isrunning=self.is_running, password=self.password)
                 start = datetime.datetime.now()
                 self.status("Waiting for new log data...")
                 while (datetime.datetime.now() - start).seconds < 60:
@@ -3445,7 +3444,8 @@ class japanese_parser(ffxiv_parser):
         self.echo("generic " + logitem, 1)
 
 
-def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, password="", chatviewer=None):
+def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, password=""):
+    print "here"
     global configfile, lastlogparsed
     config = ConfigParser.ConfigParser()
     config.read(configfile)
@@ -3502,8 +3502,6 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
                         return                
                 continue
             en_parser.close()
-            if chatviewer:
-                chatviewer.RefreshDisplay()
 
         finally:            
             if logfile:
