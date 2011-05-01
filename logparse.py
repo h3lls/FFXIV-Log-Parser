@@ -48,7 +48,6 @@ import wx
 import wx.richtext
 from threading import Thread 
 import pickle
-import decimal
 import datetime
 import sys
 import os
@@ -61,8 +60,6 @@ import urllib2
 import uuid
 import shutil
 import struct
-import locale 
-from Crypto.Cipher import Blowfish
 
 from subprocess import Popen
 import wx.lib.agw.hyperlink as hl
@@ -83,7 +80,7 @@ if os.path.exists('config/') and not os.path.exists('logparser.cfg'):
 else:
     configfile = 'logparser.cfg'
 
-version = 4.2
+version = 4.3
 charactername = ""
 doloop = 0
 app = None
@@ -164,33 +161,46 @@ class ChangeCharacterNameDialog(wx.Dialog):
     def GetPassword(self):
         return self.password.GetValue()
 
+class ReverseIterator:
+    def __init__(self, sequence):
+        self.sequence = sequence
+    def __iter__(self):
+        length = len(self.sequence)
+        i = length
+        while i > 0:
+            i = i - 1
+            yield self.sequence[i]
+
+class LogWindowContext(wx.Menu):
+    def __init__(self, chatviewer):
+        wx.Menu.__init__(self)
+        self.chatviewer = chatviewer
+        copy = self.Append(wx.ID_COPY, 'Copy' )        
+        self.AppendSeparator()
+        selectall = self.Append(wx.ID_SELECTALL, 'Select All' )
+        copy.Enable(True)
+        selectall.Enable(True)
+        
+        self.Bind(wx.EVT_MENU, self.ExecEvent)
+
+    def ExecEvent(self, event):
+        if event.GetId() == wx.ID_COPY:
+            clipdata = wx.TextDataObject()
+            clipdata.SetText(self.chatviewer.logWindow.GetStringSelection())
+            wx.TheClipboard.Open()
+            wx.TheClipboard.SetData(clipdata)
+            wx.TheClipboard.Close()
+        elif event.GetId() == wx.ID_SELECTALL:
+            self.chatviewer.logWindow.SelectAll()
+
 class ChatViewer(wx.Frame):
 
     title = "Chat Viewer"
 
     def __init__(self):
         wx.Frame.__init__(self, wx.GetApp().TopWindow, title=self.title, size=(500,400))
-        self.SetBackgroundColour((240,240,240))
-        try:
-            self.SetIcon(wx.Icon("icon.ico", wx.BITMAP_TYPE_ICO))
-        except Exception as e:
-            print e
-        self.Bind(wx.EVT_CLOSE, self.OnClose)
-        self.sb = self.CreateStatusBar() # A Statusbar in the bottom of the window
-        panel = wx.Panel(self, -1)
-        static = wx.StaticText(panel, -1, 'Select a date/time to load the chat data.', (5,12), (350, 15))
-        self.loadingMsg = wx.StaticText(panel, -1, '', (360,12), (30, 15))
-        self.datelist = wx.ListBox(panel, -1, pos=(0, 40), size=(140, 300))
-        self.Bind(wx.EVT_LISTBOX, self.OnDateSelected, self.datelist)
-        self.logWindow = wx.richtext.RichTextCtrl(panel, -1, pos=(132,40), size=(250, 300), style=wx.EXPAND | wx.TE_MULTILINE)
-        self.logWindow.SetBackgroundColour((243, 246, 237))
-        self.LoadDates()
-        self.Bind(wx.EVT_SIZE, self.OnSize)
-
-    def OnDateSelected(self, event):
-        global app
-        self.loadingMsg.SetLabel("Loading...")
-        chat_types = {
+        self.currdates = []
+        self.chat_types = {
             '01': self.WriteSay, # say
             '02': self.WriteShout, # shout
             '03': self.WriteTell, # sending tell
@@ -206,25 +216,111 @@ class ChatViewer(wx.Frame):
             '19': self.WriteEmote, # other emote
             '1B': self.WriteEmote # emote
             }
-        filename = os.path.join('chatlogs', event.GetString() + '.chat')
-        filesize = os.path.getsize(filename)
-        with open(filename, 'rb') as f:
-            chatdata = pickle.load(f)
+
+        self.SetBackgroundColour((240,240,240))
+        try:
+            self.SetIcon(wx.Icon("icon.ico", wx.BITMAP_TYPE_ICO))
+        except Exception as e:
+            print e
+        self.Bind(wx.EVT_CLOSE, self.OnClose)
+        self.sb = self.CreateStatusBar() # A Statusbar in the bottom of the window
+        panel = wx.Panel(self, -1)
+        static = wx.StaticText(panel, -1, 'Select a date/time to load the chat data.', (5,12), (210, 15))
+        self.loadingMsg = wx.StaticText(panel, -1, '', (390,12), (30, 15))
+        wx.StaticText(panel, -1, 'Search', (220,12), (35, 15))
+        self.searchbox = wx.TextCtrl(panel, -1, pos=(260, 9), size=(120, 19), style=wx.TE_PROCESS_ENTER)
+        self.searchbox.Bind(wx.EVT_TEXT_ENTER, self.DoSearch)
+        self.datelist = wx.ListBox(panel, -1, pos=(0, 40), size=(140, 300))
+        self.Bind(wx.EVT_LISTBOX, self.OnDateSelected, self.datelist)
+        self.logWindow = wx.richtext.RichTextCtrl(panel, -1, pos=(132,40), size=(250, 300), style=wx.TE_READONLY | wx.EXPAND | wx.TE_MULTILINE)
+        self.logWindow.Bind(wx.EVT_RIGHT_DOWN, self.CustomMenu)
+        self.logWindow.SetBackgroundColour((243, 246, 237))
+        self.LoadDates()
+        self.Bind(wx.EVT_SIZE, self.OnSize)
+
+    def CustomMenu(self, event):
+        pos = (event.GetPosition()[0]+self.logWindow.GetPosition()[0], event.GetPosition()[1]+self.logWindow.GetPosition()[1])
+        self.PopupMenu(LogWindowContext(self), pos)
+
+    def DoSearch(self, event):
+        self.loadingMsg.SetLabel("Searching...")
         self.logWindow.Clear()
-        self.logWindow.Freeze()
-        
+        self.datelist.SetSelection(-1)
+        searchval = self.searchbox.GetValue().lower()
         idx = 0.0
-        ttllen = len(chatdata)
-        for chatitem in chatdata:
+        ttllen = self.datelist.GetCount()
+        for index in ReverseIterator(range(ttllen - 1)):
             idx = idx + 1
-            if (idx % 100) == 0:
+            self.loadingMsg.SetLabel("Searching... %i%%" % ((idx / ttllen) * 100.0))
+            app.Yield()
+            filename = os.path.join('chatlogs', self.datelist.GetString(index + 1) + '.chat')
+            filesize = os.path.getsize(filename)
+            with open(filename, 'rb') as f:
+                chatdata = pickle.load(f)
+                for chatitem in chatdata:
+                    if (chatitem[1].lower().find(searchval) > -1) or (chatitem[2].lower().find(searchval) > -1):
+                        self.WriteDataToDisplay(chatitem, singlevalue=True)
+        self.loadingMsg.SetLabel("")
+
+    def WriteDataToDisplay(self, chatdata, singlevalue=False):
+        self.logWindow.BeginSuppressUndo()
+        if singlevalue:
+            try:
+                try:
+                    self.chat_types[chatdata[0]](chatdata[1], chatdata[2])
+                    self.logWindow.ShowPosition(self.logWindow.GetLastPosition())
+                except KeyError as e:
+                    self.WriteSay(chatdata[1], chatdata[2])
+            except:
+                pass        
+        else:
+            for chatitem in chatdata:
+                try:
+                    try:
+                        self.chat_types[chatitem[0]](chatitem[1], chatitem[2])
+                        self.logWindow.ShowPosition(self.logWindow.GetLastPosition())
+                    except KeyError as e:
+                        self.WriteSay(chatitem[1], chatitem[2])
+                except:
+                    pass
+        self.logWindow.EndSuppressUndo()
+
+    def RefreshDisplay(self):
+        #self.LoadDates()
+        #self.DoDateLoad(self.datelist.GetString(self.datelist.GetSelection()))
+        pass
+
+    def OnDateSelected(self, event):
+        self.DoDateLoad(event.GetString())
+        
+    def DoDateLoad(self, datestring):
+        global app
+        self.loadingMsg.SetLabel("Loading...")
+        self.logWindow.Clear()
+        #self.logWindow.Freeze()
+
+        if datestring != "-- Last 20 Logs --":        
+            filename = os.path.join('chatlogs', datestring + '.chat')
+            filesize = os.path.getsize(filename)
+            with open(filename, 'rb') as f:
+                chatdata = pickle.load(f)
+                self.WriteDataToDisplay(chatdata)
+        else:
+            idx = 0.0
+            ttllen = self.datelist.GetCount()
+            if ttllen > 20:
+                ttllen = 20
+            for index in ReverseIterator(range(ttllen - 1)):
+                idx = idx + 1
                 self.loadingMsg.SetLabel("Loading... %i%%" % ((idx / ttllen) * 100.0))
                 app.Yield()
-            try:
-                chat_types[chatitem[0]](chatitem[1], chatitem[2])
-            except KeyError as e:
-                self.WriteSay(chatitem[1], chatitem[2])
-        self.logWindow.Thaw()
+                filename = os.path.join('chatlogs', self.datelist.GetString(index + 1) + '.chat')
+                filesize = os.path.getsize(filename)
+                with open(filename, 'rb') as f:
+                    chatdata = pickle.load(f)
+                    self.WriteDataToDisplay(chatdata)
+
+        #self.logWindow.Thaw()
         self.loadingMsg.SetLabel("")
         
     def OnSize(self, event):
@@ -237,9 +333,19 @@ class ChatViewer(wx.Frame):
         # This loads all date files into the listbox.
         chatdates = [(os.stat(i).st_mtime, i) for i in glob.glob(os.path.join('chatlogs', '*.chat'))]
         chatdates.sort(reverse=True)
-        for date in chatdates:
-            filename = os.path.basename(os.path.splitext(date[1])[0])
-            self.datelist.Append(filename)
+        if len(self.currdates) == 0:
+            self.datelist.Append("-- Last 20 Logs --")
+            for date in chatdates:
+                filename = os.path.basename(os.path.splitext(date[1])[0])
+                self.currdates.append(filename)
+                self.datelist.Append(filename)
+        else:
+            diff = set(chatdates).difference( set(self.currdates) )
+            for date in diff:
+                filename = os.path.basename(os.path.splitext(date[1])[0])
+                self.currdates.append(filename)
+                self.datelist.Append(filename)
+
 
     def WriteEmote(self, charname, text):
         self.logWindow.BeginTextColour((80, 50, 50))
@@ -266,7 +372,7 @@ class ChatViewer(wx.Frame):
         self.logWindow.BeginBold()
         self.logWindow.WriteText("<" + charname + "> ")
         self.logWindow.EndBold()
-        self.logWindow.WriteText(text + " - linkshell\r")
+        self.logWindow.WriteText(text + "\r")
         self.logWindow.EndTextColour()
 
     def WriteSay(self, charname, text):
@@ -710,7 +816,7 @@ THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES, INC
         #    print e
         try:
             self.charlink.SetURL("http://ffxivbattle.com/character.php?charactername=" + self.charname.GetValue())
-            guithread.updatevalues(self.control.GetValue(), self.charname.GetValue(), self.OnStatus, completecallback=self.threadcallback, password=password)
+            guithread.updatevalues(self.control.GetValue(), self.charname.GetValue(), self.OnStatus, completecallback=self.threadcallback, password=password, chatviewer=self.chatviewer)
             guithread.daemon = False
             guithread.start()
         except:
@@ -754,13 +860,14 @@ class GUIThread(Thread):
         self.exitready = 0
         Thread.__init__(self) 
 
-    def updatevalues(self, logpath, charactername, status, completecallback=None, password=""):
+    def updatevalues(self, logpath, charactername, status, completecallback=None, password="", chatviewer=None):
         self.stopped = 0
         self.logpath = logpath
         self.charactername = charactername
         self.status = status
         self.completecallback = completecallback
         self.password = password
+        self.chatviewer = chatviewer
         
     def exit(self):
         self.stopped = 1
@@ -790,7 +897,7 @@ class GUIThread(Thread):
                         files = [i[1] for i in l]
                     else:
                         files = [i[1] for i in l[len(l)-3:]]
-                    readLogFile(files, self.charactername, isrunning=self.is_running, password=self.password)
+                    readLogFile(files, self.charactername, isrunning=self.is_running, password=self.password, chatviewer=self.chatviewer)
                 start = datetime.datetime.now()
                 self.status("Waiting for new log data...")
                 while (datetime.datetime.now() - start).seconds < 60:
@@ -1080,14 +1187,14 @@ class ffxiv_parser:
 
 class english_parser(ffxiv_parser):
     
-    def savealllogs(self):
-        if len(self.alllog) == 0:
-            return
-        if not os.path.exists('chatlogs'):
-            os.mkdir('chatlogs')
-        with open(os.path.join('chatlogs', '--Everything--.chat'), 'wb') as chatfile:
-            pickle.dump(self.alllog, chatfile)
-        self.alllog = []
+    #def savealllogs(self):
+    #    if len(self.alllog) == 0:
+    #        return
+    #    if not os.path.exists('chatlogs'):
+    #        os.mkdir('chatlogs')
+    #    with open(os.path.join('chatlogs', '--Everything--.chat'), 'wb') as chatfile:
+    #        pickle.dump(self.alllog, chatfile)
+    #    self.alllog = []
         
     def close(self):
         if len(self.chatlog) == 0:
@@ -1103,7 +1210,7 @@ class english_parser(ffxiv_parser):
         ffxiv_parser.__init__(self, "en")
         self.prevchatdate = None
         self.chatlog = []
-        self.alllog = []
+        #self.alllog = []
         
         self.craftingcomplete = 0
         self.autotranslateheader = HexToByte('02 2E')
@@ -1666,7 +1773,7 @@ class english_parser(ffxiv_parser):
             }
 
     def monsterIsNM(self, monster):
-        NMList = ['alux', 'bardi', 'barometz', 'bloodthirsty wolf', 'bomb baron', 'daddy longlegs', 'dodore', 'downy dunstan', 'elder mosshorn', 'escaped goobbue', 'frenzied aurelia', 'gluttonous gertrude', 'great buffalo', 'haughtpox bloatbelly', 'jackanapes', 'mosshorn billygoat', 'mosshorn nannygoat', 'nest commander', 'pyrausta', 'queen bolete', 'sirocco', 'slippery sykes', 'uraeus']
+        NMList = ['alux', 'bardi', 'barometz', 'bloodthirsty wolf', 'bomb baron', 'daddy longlegs', 'dodore', 'downy dunstan', 'elder mosshorn', 'escaped goobbue', 'frenzied aurelia', 'gluttonous gertrude', 'great buffalo', 'haughtpox bloatbelly', 'jackanapes', 'mosshorn billygoat', 'mosshorn nannygoat', 'nest commander', 'pyrausta', 'queen bolete', 'scurrying spriggan', 'sirocco', 'slippery sykes', 'uraeus']
         return monster.lower() in NMList
             
     def printCrafting(self, currentcrafting):        
@@ -1899,7 +2006,7 @@ class english_parser(ffxiv_parser):
                     # Save this up to the server so we can investigate later and add it.
                     pass
                 #self.chatviewer.WriteLinkshell(user, message)
-            chatdate = time.strftime("%m-%d-%y %H-%M-%S",time.gmtime(self.logfiletime))
+            chatdate = time.strftime("%d-%m-%y %H-%M-%S",time.gmtime(self.logfiletime))
             #if self.prevchatdate != chatdate:
             #    if self.prevchatdate != None:
             #        if not os.path.exists('chatlogs'):
@@ -1909,7 +2016,7 @@ class english_parser(ffxiv_parser):
             #        self.chatlog = []
             self.prevchatdate = chatdate 
             self.chatlog.append((code, nullstrip(user), message))
-            self.alllog.append((code, nullstrip(user), message))
+            #self.alllog.append((code, nullstrip(user), message))
             '''
             '01': self.parse_chatmessage, # say
             '02': self.parse_chatmessage, # shout
@@ -3336,7 +3443,7 @@ class japanese_parser(ffxiv_parser):
         self.echo("generic " + logitem, 1)
 
 
-def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, password=""):
+def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, password="", chatviewer=None):
     global configfile, lastlogparsed
     config = ConfigParser.ConfigParser()
     config.read(configfile)
@@ -3393,6 +3500,8 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
                         return                
                 continue
             en_parser.close()
+            if chatviewer:
+                chatviewer.RefreshDisplay()
 
         finally:            
             if logfile:
@@ -3403,7 +3512,7 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
             config.write(openconfigfile)
     if os.path.exists('newinstall'):
         os.remove('newinstall')
-    en_parser.savealllogs()
+    #en_parser.savealllogs()
     # uncomment for debugging to disable uploads
     #return
     if logsparsed > 0:
