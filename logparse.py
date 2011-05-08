@@ -87,6 +87,7 @@ charactername = ""
 doloop = 0
 app = None
 autotranslatearray = None
+currentlanguage = 'en'
 
 # Store the last log parsed
 lastlogparsed = 0
@@ -175,12 +176,18 @@ class ReverseIterator:
             yield self.sequence[i]
 
 class LogWindowContext(wx.Menu):
-    def __init__(self, chatviewer):
+    def __init__(self, chatviewer, language):
         wx.Menu.__init__(self)
         self.chatviewer = chatviewer
-        copy = self.Append(wx.ID_COPY, 'Copy' )        
+        if language == 'en':
+            copy = self.Append(wx.ID_COPY, 'Copy' )        
+        else:
+            copy = self.Append(wx.ID_COPY, u'コピー' )        
         self.AppendSeparator()
-        selectall = self.Append(wx.ID_SELECTALL, 'Select All' )
+        if language == 'en':
+            selectall = self.Append(wx.ID_SELECTALL, 'Select All' )
+        else:
+            selectall = self.Append(wx.ID_SELECTALL, u'すべて選択' )        
         copy.Enable(True)
         selectall.Enable(True)
         
@@ -198,10 +205,13 @@ class LogWindowContext(wx.Menu):
 
 class ChatViewer(wx.Frame):
 
-    title = "Chat Viewer"
-
-    def __init__(self):
-        wx.Frame.__init__(self, wx.GetApp().TopWindow, title=self.title, size=(500,400))
+    def __init__(self, language):
+        if language == 'en':
+            wx.Frame.__init__(self, wx.GetApp().TopWindow, title='Chat Viewer', size=(500,400))
+        else:
+            wx.Frame.__init__(self, wx.GetApp().TopWindow, title=u'チャットビューア', size=(500,400))
+        self.language = language
+        # this is cleanup from an earlier version.  It will be removed after a few versions go by.
         if os.path.exists(os.path.join('chatlogs', '--Everything--.chat')):
             os.remove(os.path.join('chatlogs', '--Everything--.chat'))
         self.currdates = []
@@ -213,11 +223,16 @@ class ChatViewer(wx.Frame):
             '05': self.WriteLinkshell, # linkshell
             '06': self.WriteLinkshell, # linkshell
             '07': self.WriteLinkshell, # linkshell
-            '10': self.WriteSay, # say messages by others?
             '0D': self.WriteTell, # get tell
             '0F': self.WriteLinkshell, # linkshell
             '0E': self.WriteLinkshell, # linkshell
             '0F': self.WriteLinkshell, # linkshell
+            '10': self.WriteLinkshell, # linkshell
+            '11': self.WriteLinkshell, # linkshell
+            '12': self.WriteLinkshell, # linkshell
+            '13': self.WriteLinkshell, # linkshell
+            '14': self.WriteLinkshell, # linkshell
+            '15': self.WriteLinkshell, # linkshell
             '19': self.WriteEmote, # other emote
             '1B': self.WriteEmote # emote
             }
@@ -230,9 +245,13 @@ class ChatViewer(wx.Frame):
         self.Bind(wx.EVT_CLOSE, self.OnClose)
         self.sb = self.CreateStatusBar() # A Statusbar in the bottom of the window
         panel = wx.Panel(self, -1)
-        static = wx.StaticText(panel, -1, 'Select a date/time to load the chat data.', (5,12), (210, 15))
+        if self.language == 'en':
+            static = wx.StaticText(panel, -1, 'Select a date/time to load the chat data.', (5,12), (210, 15))
+            wx.StaticText(panel, -1, 'Search', (220,12), (35, 15))
+        else:
+            static = wx.StaticText(panel, -1, u'選択して日付と時刻は、チャットデータをロードする.', (5,12), (210, 15))
+            wx.StaticText(panel, -1, u'検索', (220,12), (35, 15))
         self.loadingMsg = wx.StaticText(panel, -1, '', (390,12), (30, 15))
-        wx.StaticText(panel, -1, 'Search', (220,12), (35, 15))
         self.searchbox = wx.TextCtrl(panel, -1, pos=(260, 9), size=(120, 19), style=wx.TE_PROCESS_ENTER)
         self.searchbox.Bind(wx.EVT_TEXT_ENTER, self.DoSearch)
         self.datelist = wx.ListBox(panel, -1, pos=(0, 40), size=(140, 300))
@@ -245,10 +264,13 @@ class ChatViewer(wx.Frame):
 
     def CustomMenu(self, event):
         pos = (event.GetPosition()[0]+self.logWindow.GetPosition()[0], event.GetPosition()[1]+self.logWindow.GetPosition()[1])
-        self.PopupMenu(LogWindowContext(self), pos)
+        self.PopupMenu(LogWindowContext(self), pos, self.language)
 
     def DoSearch(self, event):
-        self.loadingMsg.SetLabel("Searching...")
+        if self.language == 'en':
+            self.loadingMsg.SetLabel("Searching...")
+        else:
+            self.loadingMsg.SetLabel(u"検索...")
         self.logWindow.Clear()
         self.datelist.SetSelection(-1)
         searchval = self.searchbox.GetValue().lower()
@@ -256,7 +278,10 @@ class ChatViewer(wx.Frame):
         ttllen = self.datelist.GetCount()
         for index in ReverseIterator(range(ttllen - 1)):
             idx = idx + 1
-            self.loadingMsg.SetLabel("Searching... %i%%" % ((idx / ttllen) * 100.0))
+            if self.language == 'en':
+                self.loadingMsg.SetLabel("Searching... %i%%" % ((idx / ttllen) * 100.0))
+            else:
+                self.loadingMsg.SetLabel(u"検索... %i%%" % ((idx / ttllen) * 100.0))
             app.Yield()
             filename = os.path.join('chatlogs', self.datelist.GetString(index + 1) + '.chat')
             filesize = os.path.getsize(filename)
@@ -300,11 +325,14 @@ class ChatViewer(wx.Frame):
         
     def DoDateLoad(self, datestring):
         global app
-        self.loadingMsg.SetLabel("Loading...")
+        if self.language == 'en':
+            self.loadingMsg.SetLabel("Loading...")
+        else:
+            self.loadingMsg.SetLabel(u"ロード...")
         self.logWindow.Clear()
         #self.logWindow.Freeze()
 
-        if datestring != "-- Last 20 Logs --":        
+        if datestring != "-- Last 20 Logs --" and datestring != u'-- 20最後にログ --':
             filename = os.path.join('chatlogs', datestring + '.chat')
             filesize = os.path.getsize(filename)
             with open(filename, 'rb') as f:
@@ -317,7 +345,10 @@ class ChatViewer(wx.Frame):
                 ttllen = 20
             for index in ReverseIterator(range(ttllen - 1)):
                 idx = idx + 1
-                self.loadingMsg.SetLabel("Loading... %i%%" % ((idx / ttllen) * 100.0))
+                if self.language == 'en':
+                    self.loadingMsg.SetLabel("Loading... %i%%" % ((idx / ttllen) * 100.0))
+                else:
+                    self.loadingMsg.SetLabel(u"ロード... %i%%" % ((idx / ttllen) * 100.0))
                 app.Yield()
                 filename = os.path.join('chatlogs', self.datelist.GetString(index + 1) + '.chat')
                 filesize = os.path.getsize(filename)
@@ -339,7 +370,10 @@ class ChatViewer(wx.Frame):
         chatdates = [(os.stat(i).st_mtime, i) for i in glob.glob(os.path.join('chatlogs', '*.chat'))]
         chatdates.sort(reverse=True)
         if len(self.currdates) == 0:
-            self.datelist.Append("-- Last 20 Logs --")
+            if self.language == 'en':
+                self.datelist.Append("-- Last 20 Logs --")
+            else:
+                self.datelist.Append(u"-- 20最後にログ --")
             for date in chatdates:
                 filename = os.path.basename(os.path.splitext(date[1])[0])
                 self.currdates.append(filename)
@@ -364,12 +398,18 @@ class ChatViewer(wx.Frame):
 
     def WriteTell(self, charname, text):
         self.logWindow.BeginTextColour((190, 70, 70))
-        self.logWindow.WriteText("%s whispers %s\r" % (charname, text))
+        if self.language == 'en':
+            self.logWindow.WriteText("%s whispers %s\r" % (charname, text))
+        else:
+            self.logWindow.WriteText(u"%s >> %s\r" % (charname, text))
         self.logWindow.EndTextColour()
 
     def WriteShout(self, charname, text):
         self.logWindow.BeginTextColour((140, 50, 50))
-        self.logWindow.WriteText("%s shouts %s\r" % (charname, text))
+        if self.language == 'en':
+            self.logWindow.WriteText("%s shouts %s\r" % (charname, text))
+        else:
+            self.logWindow.WriteText(u"%s コメント %s\r" % (charname, text))
         self.logWindow.EndTextColour()
         
     def WriteLinkshell(self, charname, text):
@@ -381,7 +421,10 @@ class ChatViewer(wx.Frame):
         self.logWindow.EndTextColour()
 
     def WriteSay(self, charname, text):
-        self.logWindow.WriteText("%s says %s\r" % (charname, text))
+        if self.language == 'en':
+            self.logWindow.WriteText("%s says %s\r" % (charname, text))
+        else:
+            self.logWindow.WriteText(u"%s 言う %s\r" % (charname, text))
         
 
     def OnClose(self, e):
@@ -389,8 +432,7 @@ class ChatViewer(wx.Frame):
 
 class MainFrame(wx.Frame):
     def SaveLanguageSetting(self, lang):
-        global configfile
-
+        global configfile, currentlanguage
         config = ConfigParser.ConfigParser()
         try:
             config.add_section('Config')
@@ -398,6 +440,7 @@ class MainFrame(wx.Frame):
             pass
         config.read(configfile)
         self.language = lang
+        currentlanguage = lang
 
         config.set('Config', 'language', lang)
         with open(configfile, 'wb') as openconfigfile:
@@ -415,8 +458,12 @@ class MainFrame(wx.Frame):
         self.filemenu.SetHelpString(2, " Check for an update to the program")
         self.filemenu.SetLabel(wx.ID_EXIT, "E&xit")
         self.filemenu.SetHelpString(wx.ID_EXIT, " Terminate the program")
+        self.chatmenu.SetLabel(13, 'Chat &Viewer')
+        self.chatmenu.SetHelpString(13, "Opens the chat viewer window.")
+
         self.menuBar.SetLabelTop(0, "&File")
         self.menuBar.SetLabelTop(1, "&Language")
+        self.menuBar.SetLabelTop(2, "&Chat")
         self.st.SetLabel("Select Log Path")
         self.st2.SetLabel("Enter Your Character Name (default is unique id to hide your name)")
         if self.btnCharChange:
@@ -440,8 +487,12 @@ class MainFrame(wx.Frame):
         self.filemenu.SetHelpString(2, u"プログラムの更新をチェックする")
         self.filemenu.SetLabel(wx.ID_EXIT, u"終了")
         self.filemenu.SetHelpString(wx.ID_EXIT, u"終了プログラム")
+        self.chatmenu.SetLabel(13, u'チャットビューア')
+        self.chatmenu.SetHelpString(13, u"が表示されますビューアチャットウィンドウ。")
+
         self.menuBar.SetLabelTop(0, u"ファイル")
         self.menuBar.SetLabelTop(1, u"言語")
+        self.menuBar.SetLabelTop(2, u"チャット")
         self.st.SetLabel(u"選択してログのパス")
         self.st2.SetLabel(u"文字型の名前 （デフォルトでは、名前を非表示にする一意のIDです）")
         if self.btnCharChange:
@@ -453,11 +504,11 @@ class MainFrame(wx.Frame):
         self.SaveLanguageSetting('jp')
 
     def OpenChatViewer(self, event):
-        self.chatviewer = ChatViewer()
+        self.chatviewer = ChatViewer(self.language)
         self.chatviewer.Show()
         
     def __init__(self, parent, title):
-        global configfile, autotranslatearray
+        global configfile, autotranslatearray, currentlanguage
         wx.Frame.__init__(self, parent, title=title, size=(400,314))
         try:
             self.SetIcon(wx.Icon("icon.ico", wx.BITMAP_TYPE_ICO))
@@ -571,17 +622,20 @@ class MainFrame(wx.Frame):
                 self.languagemenu.Check(12, True)
                 self.SetJapanese(None)
                 self.language = 'jp'
+                currentlanguage = 'jp'
         except:
             pass
 
         sys.stdout=redir
+        self.Show(True)
+        '''
         if os.path.exists('autotranslate.gz'):
             print "Opening autotranslate file..."
             f = gzip.open('autotranslate.gz', 'rb')
             autotranslatearray = json.loads(f.read())
             f.close()
             print "Autotranslate loaded."        
-        self.Show(True)
+        '''
 
     def OnChangeCharacter(self, event):
         global configfile
@@ -922,7 +976,7 @@ class GUIThread(Thread):
 
 def main():
     #try:    
-        global doloop, guithread, configfile, lastlogparsed, app
+        global doloop, guithread, configfile, lastlogparsed, app, autotranslatearray
         args = sys.argv[1:]
 
         config = ConfigParser.ConfigParser()
@@ -946,7 +1000,15 @@ def main():
                     Popen("setup.exe", shell=False) # start reloader
                     return
                 frame = MainFrame(None, "FFXIV Log Parser")
+                if os.path.exists('autotranslate.gz'):
+                    print "Opening autotranslate file..."
+                    app.Yield()
+                    f = gzip.open('autotranslate.gz', 'rb')
+                    autotranslatearray = json.loads(f.read())
+                    f.close()
+                    print "Autotranslate loaded."        
                 app.MainLoop()
+                
                 try:
                     if guithread:
                         guithread.exit()
@@ -1085,11 +1147,16 @@ class ffxiv_parser:
             '05': self.parse_chatmessage, # linkshell
             '06': self.parse_chatmessage, # linkshell
             '07': self.parse_chatmessage, # linkshell
-            '10': self.parse_chatmessage, # say messages by others?
             '0D': self.parse_chatmessage, # get tell
             '0F': self.parse_chatmessage, # linkshell
             '0E': self.parse_chatmessage, # linkshell
             '0F': self.parse_chatmessage, # linkshell
+            '10': self.parse_chatmessage, # linkshell
+            '11': self.parse_chatmessage, # linkshell
+            '12': self.parse_chatmessage, # linkshell
+            '13': self.parse_chatmessage, # linkshell
+            '14': self.parse_chatmessage, # linkshell
+            '15': self.parse_chatmessage, # linkshell
             '19': self.parse_chatmessage, # other emote
             '1B': self.parse_chatmessage, # emote
             '1D': self.parse_servermessage,
@@ -1190,7 +1257,7 @@ class ffxiv_parser:
             logvalue = logitem[4:]
         else:
             logvalue = logitem[3:]
-        return code.decode('utf-8'), logvalue
+        return str(code), logvalue #, 'ascii', errors='ignore'), logvalue #.decode('utf-8'), logvalue
 
     def getlogpartsalt(self, logitem):
         if (logitem.find(':') != -1):
@@ -1224,24 +1291,18 @@ class ffxiv_parser:
                 pass
 
     def parse_line(self, logitem):
+        #print ''.join( [ "%02X " % x for x in logitem ] ).strip()
         code, logvalue = self.getlogparts(logitem)
         #print code
+        #print self.function_map[code]
         try:
             self.function_map[code](code, logvalue)
-        except KeyError as e:
-            self.echo("Could not parse code: %s value: %s error: %s" % (code, logvalue, e), 1)
+        except: # Exception as e:
+            traceback.print_exc(file=sys.stdout)            
+            self.echo("Could not parse code: %s value: %s error: %s" % (code, ByteToHex(logvalue.decode('utf-8')), e), -1)
 
 class english_parser(ffxiv_parser):
     
-    #def savealllogs(self):
-    #    if len(self.alllog) == 0:
-    #        return
-    #    if not os.path.exists('chatlogs'):
-    #        os.mkdir('chatlogs')
-    #    with open(os.path.join('chatlogs', '--Everything--.chat'), 'wb') as chatfile:
-    #        pickle.dump(self.alllog, chatfile)
-    #    self.alllog = []
-        
     def close(self):
         if len(self.chatlog) == 0:
             return
@@ -1256,7 +1317,6 @@ class english_parser(ffxiv_parser):
         ffxiv_parser.__init__(self, "en")
         self.prevchatdate = None
         self.chatlog = []
-        #self.alllog = []
         
         self.craftingcomplete = 0
         self.autotranslateheader = b'\x02\x2E'
@@ -1385,6 +1445,7 @@ class english_parser(ffxiv_parser):
             self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
             #print self.currentcrafting["datetime"]
             self.craftingcomplete = 0
+
         if logitem.find("Standard Synthesis") != -1:
             # store previous value if valid:
             if self.synthtype != "":
@@ -1434,12 +1495,13 @@ class english_parser(ffxiv_parser):
             
     def engaged(self, logitem):
         if self.craftingcomplete == 1:
-            #print logitem
+            if self.synthtype != "":
+                self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
             self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
             self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
-            #print self.currentcrafting["datetime"]
             self.craftingcomplete = 0
+            self.synthtype = ""
         if logitem.find("You cannot change classes") != -1 or logitem.find("Levequest difficulty") != -1:
             return
         self.defeated = False
@@ -1464,7 +1526,10 @@ class english_parser(ffxiv_parser):
         self.echo("leve " + logitem, 1)
 
     def parse_chatmessage(self, code, logitem):
-        global autotranslatearray
+        global autotranslatearray, currentlanguage
+        if currentlanguage != 'en':
+            #print "Current Lanuage in EN: " + currentlanguage
+            return
         loopcnt = 0
         while logitem.find(self.autotranslateheader) != -1:
             loopcnt +=1;
@@ -1746,13 +1811,17 @@ class english_parser(ffxiv_parser):
 
     def parse_defeated(self, code, logitem):
         logitem = logitem.decode('utf-8')
+        self.echo("defeated " + logitem, 1)        
         if self.craftingcomplete == 1:
             #print "Defeated:" + logitem
+            if self.synthtype != "":
+                self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
             self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
             self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
             #print self.currentcrafting["datetime"]
             self.craftingcomplete = 0
+            self.synthtype = ""
         if logitem.find("group") != -1:
             return
         if logitem.find("defeats you") != -1:
@@ -1761,6 +1830,11 @@ class english_parser(ffxiv_parser):
             #self.characterdata["deaths"].append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "class":self.currentmonster["class"]})
             #0045::The fat dodo defeats you.
             return
+        if logitem.find("You defeat the") != -1:
+            monster = logitem[logitem.find("defeat the ") +11:logitem.find(".")]
+            if monster != self.currentmonster["monster"]:
+                return
+            self.defeated = True
         if logitem.find("defeat") != -1:
             monster = logitem[logitem.find("The ") +4:logitem.find(" is defeat")].split('\'')[0]
             if monster != self.currentmonster["monster"]:
@@ -1774,7 +1848,6 @@ class english_parser(ffxiv_parser):
             self.expset = False
             self.printDamage(self.currentmonster)
 
-        self.echo("defeated " + logitem, 1)
 
     def parse_spexpgain(self, code, logitem):
         logitem = logitem.decode('utf-8')
@@ -1795,6 +1868,11 @@ class english_parser(ffxiv_parser):
                 self.currentcrafting["skillpoints"] = int(logitemparts[2])
                 self.currentcrafting["class"] = logitemparts[3]
                 self.spset = True
+        if self.craftingcomplete and self.spset:
+            self.parse_defeated("", "")
+            self.defeated = False
+            self.spset = False
+            self.expset = False
             
         if self.defeated and self.spset and self.expset:
             self.defeated = False
@@ -1805,12 +1883,18 @@ class english_parser(ffxiv_parser):
         #if and self.spset and self.defeated:
         #    self.engaged(logitem)
         self.echo("spexpgain " + logitem, 1)
+
     def throwaway(self, logitem):
         item = logitem[logitem.find("away the ") + 9:logitem.find(".")]
         #self.lostitems.append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "item":item})
         
     def parse_genericmessage(self, code, logitem):
-        logitem = logitem.decode('utf-8')
+        try:
+            logitem = logitem.decode('utf-8')
+        except:
+            # specific to: 54 68 65 20 64 61 72 6B 77 69 6E 67 20 64 65 76 69 6C 65 74 20 69 73 20 6D 61 72 6B 65 64 20 77 69 74 68 20 02 12 04 F2 01 29 03 2E
+            #print ''.join( [ "%02X " % x for x in logitem ] ).strip()
+            return
         if logitem.find("You throw away") != -1:
             self.throwaway(logitem)
         if logitem.find("is defeated") != -1:
@@ -1842,573 +1926,59 @@ class english_parser(ffxiv_parser):
         self.echo("generic " + logitem, 1)
 
 class japanese_parser(ffxiv_parser):
+
+    def close(self):
+        if len(self.chatlog) == 0:
+            return
+        if self.prevchatdate != None:
+            if not os.path.exists('chatlogs'):
+                os.mkdir('chatlogs')
+            with open(os.path.join('chatlogs', self.prevchatdate + '.chat'), 'wb') as chatfile:
+                pickle.dump(self.chatlog, chatfile)
+            self.chatlog = []
     
-    def __init__(self): 
+    def __init__(self):
         ffxiv_parser.__init__(self, "jp")
+        self.prevchatdate = None
+        self.chatlog = []
+        
         self.craftingcomplete = 0
-        self.autotranslateheader = HexToByte('02 2E')
-        #TODO: Move this to a bin file later to avoid the hextobyte and crap in the source.
-        self.autotranslate = {        
-            HexToByte('02 2E 03 01 66 03'):"(Please use the auto-translate function.)",
-            HexToByte('02 2E 03 01 67 03'):"(Japanese)",
-            HexToByte('02 2E 03 01 68 03'):"(English)",
-            HexToByte('02 2E 03 01 69 03'):"(French)",
-            HexToByte('02 2E 03 01 6A 03'):"(German)",
-            HexToByte('02 2E 03 01 6B 03'):"(Can you speak Japanese?)",
-            HexToByte('02 2E 03 01 6C 03'):"(Can you speak English?)",
-            HexToByte('02 2E 03 01 6D 03'):"(Can you speak French?)",
-            HexToByte('02 2E 03 01 6E 03'):"(Can you speak German?)",
-            HexToByte('02 2E 03 01 6F 03'):"(I don't speak any English.)",
-            HexToByte('02 2E 03 01 70 03'):"(I don't speak any Japanese.)",
-            HexToByte('02 2E 03 01 71 03'):"(I don't speak any French.)",
-            HexToByte('02 2E 03 01 72 03'):"(I don't speak any German.)",
-            HexToByte('02 2E 03 01 73 03'):"(Please listen.)",
-            HexToByte('02 2E 03 01 74 03'):"(Can you hear me?)",
-            HexToByte('02 2E 03 01 75 03'):"(I can speak a little.)",
-            HexToByte('02 2E 03 01 76 03'):"(I can understand a little.)",
-            HexToByte('02 2E 03 01 77 03'):"(Please use simple words.)",
-            HexToByte('02 2E 03 01 78 03'):"(Please do not abbreviate your words.)",
-            HexToByte('02 2E 03 01 79 03'):"(I need some time to put together my answer.)",
-            HexToByte('02 2E 03 02 CA 03'):"(Nice to meet you.)",
-            HexToByte('02 2E 03 02 CB 03'):"(Good morning!)",
-            HexToByte('02 2E 03 02 CC 03'):"(Hello!)",
-            HexToByte('02 2E 03 02 CD 03'):"(Good evening!)",
-            HexToByte('02 2E 03 02 CE 03'):"(Good night!)",
-            HexToByte('02 2E 03 02 CF 03'):"(Goodbye.)",
-            HexToByte('02 2E 04 02 F0 CF 03'):"(I had fun today!)",
-            HexToByte('02 2E 04 02 F0 D0 03'):"(See you again!)",
-            HexToByte('02 2E 04 02 F0 D1 03'):"(Let's play together again sometime!)",
-            HexToByte('02 2E 04 02 F0 D2 03'):"(I'm back!)",
-            HexToByte('02 2E 04 02 F0 D3 03'):"(Welcome back.)",
-            HexToByte('02 2E 04 02 F0 D4 03'):"(Congratulations!)",
-            HexToByte('02 2E 04 02 F0 D5 03'):"(Good job!)",
-            HexToByte('02 2E 04 02 F0 D6 03'):"(Good luck!)",
-            HexToByte('02 2E 04 02 F0 D7 03'):"(All right!)",
-            HexToByte('02 2E 04 02 F0 D8 03'):"(Thank you.)",
-            HexToByte('02 2E 04 02 F0 D9 03'):"(You're welcome.)",
-            HexToByte('02 2E 04 02 F0 DA 03'):"(Take care.)",
-            HexToByte('02 2E 04 02 F0 DB 03'):"(I'm sorry.)",
-            HexToByte('02 2E 04 02 F0 DC 03'):"(Please forgive me.)",
-            HexToByte('02 2E 04 02 F0 DD 03'):"(That's too bad.)",
-            HexToByte('02 2E 04 02 F0 DE 03'):"(Excuse me...)",
-            HexToByte('02 2E 05 03 F2 01 2D 03'):"(Who?)",
-            HexToByte('02 2E 05 03 F2 01 2E 03'):"(Which?)",
-            HexToByte('02 2E 05 03 F2 01 2F 03'):"(How?)",
-            HexToByte('02 2E 05 03 F2 01 30 03'):"(What?)",
-            HexToByte('02 2E 05 03 F2 01 31 03'):"(When?)",
-            HexToByte('02 2E 05 03 F2 01 32 03'):"(How many?)",
-            HexToByte('02 2E 05 03 F2 01 33 03'):"(Where?)",
-            HexToByte('02 2E 05 03 F2 01 34 03'):"(Where shall we go?)",
-            HexToByte('02 2E 05 03 F2 01 35 03'):"(Which guildleve shall we do?)",
-            HexToByte('02 2E 05 03 F2 01 37 03'):"(Do you have it?)",
-            HexToByte('02 2E 05 03 F2 01 38 03'):"(What weapons can you use?)",
-            HexToByte('02 2E 05 03 F2 01 39 03'):"(What guildleves do you have?)",
-            HexToByte('02 2E 05 03 F2 01 3B 03'):"(Can you do it?)",
-            HexToByte('02 2E 05 03 F2 01 3C 03'):"(What other classes can you use?)",
-            HexToByte('02 2E 05 03 F2 01 3D 03'):"(Do you have it set?)",
-            HexToByte('02 2E 05 03 F2 01 3E 03'):"(What's the battle plan?)",
-            HexToByte('02 2E 05 03 F2 01 3F 03'):"(What's the Battle Regimen order?)",
-            HexToByte('02 2E 05 03 F2 01 40 03'):"(Can I add you to my friend list?)",
-            HexToByte('02 2E 05 03 F2 01 41 03'):"(Shall we take a break?)",
-            HexToByte('02 2E 05 03 F2 01 42 03'):"(Do you want me to repair it?)",
-            HexToByte('02 2E 05 03 F2 01 43 03'):"(Do you need any help?)",
-            HexToByte('02 2E 05 04 F2 01 91 03'):"(I don't understand.)",
-            HexToByte('02 2E 05 04 F2 01 92 03'):"(No thanks.)",
-            HexToByte('02 2E 05 04 F2 01 93 03'):"(Yes, please.)",
-            HexToByte('02 2E 05 04 F2 01 94 03'):"(If you would be so kind.)",
-            HexToByte('02 2E 05 04 F2 01 95 03'):"(Understood.)",
-            HexToByte('02 2E 05 04 F2 01 96 03'):"(I'm sorry. I'm busy now.)",
-            HexToByte('02 2E 05 04 F2 01 97 03'):"(I'm playing solo right now.)",
-            HexToByte('02 2E 05 04 F2 01 98 03'):"(I don't know how ot answer that question.)",
-            HexToByte('02 2E 05 04 F2 01 99 03'):"(I see.)",
-            HexToByte('02 2E 05 04 F2 01 9A 03'):"(Thanks for the offer, but I'll have to pass.)",
-            HexToByte('02 2E 05 04 F2 01 9B 03'):"(That's interesting.)",
-            HexToByte('02 2E 05 04 F2 01 9C 03'):"(Um...)",
-            HexToByte('02 2E 05 04 F2 01 9D 03'):"(Huh!?)",
-            HexToByte('02 2E 05 04 F2 01 9E 03'):"(Really?)",
-            HexToByte('02 2E 05 04 F2 01 9F 03'):"(Hmmm.)",
-            HexToByte('02 2E 05 04 F2 01 A0 03'):"(I have to go soon.)",  
-            HexToByte('02 2E 05 05 F2 01 F5 03'):"(Casting spell.)",
-            HexToByte('02 2E 05 05 F2 01 F6 03'):"(Time for work!)",
-            HexToByte('02 2E 05 05 F2 01 F7 03'):"(I have plans.)",
-            HexToByte('02 2E 05 05 F2 01 F8 03'):"(I'm sleepy.)",
-            HexToByte('02 2E 05 05 F2 01 F9 03'):"(I'm tired.)",
-            HexToByte('02 2E 05 05 F2 01 FA 03'):"(Have stuff to do, gotta go!)",
-            HexToByte('02 2E 05 05 F2 01 FB 03'):"(I don't feel well.)",
-            HexToByte('02 2E 05 05 F2 01 FC 03'):"(I'm not up for it.)",
-            HexToByte('02 2E 05 05 F2 01 FD 03'):"(I'm interested.)",
-            HexToByte('02 2E 05 05 F2 01 FE 03'):"(Fighting right now!)",
-            HexToByte('02 2E 05 05 F2 01 FF 03'):"(I want to make money.)",
-            HexToByte('02 2E 04 05 F1 02 03'):"(I don't remember.)",
-            HexToByte('02 2E 05 05 F2 02 01 03'):"(I don't know.)",
-            HexToByte('02 2E 05 05 F2 02 02 03'):"(Just used it.)",
-            HexToByte('02 2E 05 05 F2 02 03 03'):"(I want experience points.)",
-            HexToByte('02 2E 05 05 F2 02 04 03'):"(I want skill points.)",
-            HexToByte('02 2E 05 06 F2 02 59 03'):"(Can I have it?)",
-            HexToByte('02 2E 05 06 F2 02 5A 03'):"(Can you do it for me?)",
-            HexToByte('02 2E 05 06 F2 02 5B 03'):"(Lower the price?)",
-            HexToByte('02 2E 05 06 F2 02 5C 03'):"(Buy?)",
-            HexToByte('02 2E 05 06 F2 02 5D 03'):"(Sell?)",
-            HexToByte('02 2E 05 06 F2 02 5E 03'):"(Trade?)",
-            HexToByte('02 2E 05 06 F2 02 5F 03'):"(Do you need it?)",
-            HexToByte('02 2E 05 06 F2 02 60 03'):"(Can you make it?)",
-            HexToByte('02 2E 05 06 F2 02 61 03'):"(Do you have it?)",
-            HexToByte('02 2E 05 06 F2 02 62 03'):"(Can you repair it?)",
-            HexToByte('02 2E 05 06 F2 02 63 03'):"(What materials are needed?)",
-            HexToByte('02 2E 05 06 F2 02 64 03'):"(No money!)",
-            HexToByte('02 2E 05 06 F2 02 65 03'):"(I don't have anything to give you.)",
-            HexToByte('02 2E 05 06 F2 02 66 03'):"(You can have this.)",
-            HexToByte('02 2E 05 06 F2 02 67 03'):"(Please.)",
-            HexToByte('02 2E 05 06 F2 02 68 03'):"(Reward:)",
-            HexToByte('02 2E 05 06 F2 02 69 03'):"(Price:)", 
-            HexToByte('02 2E 05 07 F2 02 BD 03'):"(Looking for members.)",
-            HexToByte('02 2E 05 07 F2 02 BE 03'):"(Gather together.)",
-            HexToByte('02 2E 05 07 F2 02 BF 03'):"(Team up?)",
-            HexToByte('02 2E 05 07 F2 02 C0 03'):"(Are you alone?)",
-            HexToByte('02 2E 05 07 F2 02 C1 03'):"(Any vacancies?)",
-            HexToByte('02 2E 05 07 F2 02 C2 03'):"(Please invite me.)",
-            HexToByte('02 2E 05 07 F2 02 C3 03'):"(Please let me join.)",
-            HexToByte('02 2E 05 07 F2 02 C4 03'):"(Who is the leader?)",
-            HexToByte('02 2E 05 07 F2 02 C5 03'):"(Just for a short time is fine.)",
-            HexToByte('02 2E 05 07 F2 02 C6 03'):"(Our party's full.)",
-            HexToByte('02 2E 05 07 F2 02 C7 03'):"(Please assist.)",
-            HexToByte('02 2E 05 07 F2 02 C8 03'):"(Disbanding party.)",
-            HexToByte('02 2E 05 07 F2 02 C9 03'):"(Taking a break.)",
-            HexToByte('02 2E 05 07 F2 02 CA 03'):"(It's better if physical levels aren't too far apart.)",
-            HexToByte('02 2E 05 07 F2 02 CB 03'):"(It's better if skill levels aren't too far apart.)",
-            HexToByte('02 2E 05 08 F2 03 21 03'):"(Please follow.)",
-            HexToByte('02 2E 05 08 F2 03 22 03'):"(I'll follow you.)",
-            HexToByte('02 2E 05 08 F2 03 23 03'):"(Please check it.)",
-            HexToByte('02 2E 05 08 F2 03 24 03'):"(Found it!)",
-            HexToByte('02 2E 05 08 F2 03 25 03'):"(Full attack!)",
-            HexToByte('02 2E 05 08 F2 03 26 03'):"(Pull back.)",
-            HexToByte('02 2E 05 08 F2 03 27 03'):"(Watch out for enemies.)",
-            HexToByte('02 2E 05 08 F2 03 28 03'):"(Defeat this one first!)",
-            HexToByte('02 2E 05 08 F2 03 29 03'):"(Please don't attack.)",
-            HexToByte('02 2E 05 08 F2 03 2A 03'):"(Please deactivate it.)",
-            HexToByte('02 2E 05 08 F2 03 2B 03'):"(Heal!)",
-            HexToByte('02 2E 05 08 F2 03 2C 03'):"(Run away!)",
-            HexToByte('02 2E 05 08 F2 03 2D 03'):"(Help me out!)",
-            HexToByte('02 2E 05 08 F2 03 2E 03'):"(Stop!)",
-            HexToByte('02 2E 05 08 F2 03 2F 03'):"(Standing by.)",
-            HexToByte('02 2E 05 08 F2 03 30 03'):"(None left.)",
-            HexToByte('02 2E 05 08 F2 03 31 03'):"(Don't have it.)",
-            HexToByte('02 2E 05 08 F2 03 32 03'):"(Please use it sparingly.)",
-            HexToByte('02 2E 05 08 F2 03 33 03'):"(I'll use it sparingly.)",
-            HexToByte('02 2E 05 08 F2 03 34 03'):"(I'm weakened.)",
-            HexToByte('02 2E 05 08 F2 03 35 03'):"(My gear is in poor condition.)",
-            HexToByte('02 2E 05 08 F2 03 36 03'):"(Ready!)",
-            HexToByte('02 2E 05 08 F2 03 37 03'):"(Making a Battle Regimen.)",
-            HexToByte('02 2E 05 08 F2 03 38 03'):"(Starting the Battle Regimen.)",
-            HexToByte('02 2E 05 08 F2 03 39 03'):"(Please set enemy marks.)",
-            HexToByte('02 2E 05 08 F2 03 3A 03'):"(Please set an ally mark.)",
-            HexToByte('02 2E 05 08 F2 03 3B 03'):"(Please use it.)",
-            HexToByte('02 2E 05 08 F2 03 3C 03'):"(Let's rest for a while.)",
-            HexToByte('02 2E 05 08 F2 03 3D 03'):"(Front line job)",
-            HexToByte('02 2E 05 08 F2 03 3E 03'):"(Support role job)",
-            HexToByte('02 2E 05 08 F2 03 3F 03'):"(Back line job)",
-            HexToByte('02 2E 05 08 F2 03 40 03'):"(Weakness)",
-            HexToByte('02 2E 05 08 F2 03 41 03'):"(Warning)",
-            HexToByte('02 2E 05 08 F2 03 42 03'):"(Recommend)",
-            HexToByte('02 2E 05 08 F2 03 43 03'):"(Kill Order)",
-            HexToByte('02 2E 05 09 F2 03 85 03'):"(Guildleve)",
-            HexToByte('02 2E 05 09 F2 03 87 03'):"(Quest)",
-            HexToByte('02 2E 05 09 F2 03 88 03'):"(Client)",
-            HexToByte('02 2E 05 09 F2 03 89 03'):"(Instance)",
-            HexToByte('02 2E 05 09 F2 03 8A 03'):"(Gil)",
-            HexToByte('02 2E 05 09 F2 03 8B 03'):"(Skill)",
-            HexToByte('02 2E 05 09 F2 03 8C 03'):"(Primary Skill)",
-            HexToByte('02 2E 05 09 F2 03 8D 03'):"(Primary Skill Rank)",
-            HexToByte('02 2E 05 09 F2 03 8E 03'):"(Physical Level)",
-            HexToByte('02 2E 05 09 F2 03 8F 03'):"(Skill Point)",
-            HexToByte('02 2E 05 09 F2 03 90 03'):"(Experience Points)",
-            HexToByte('02 2E 05 09 F2 03 91 03'):"(Affinity)",
-            HexToByte('02 2E 05 09 F2 03 92 03'):"(Attribute)",
-            HexToByte('02 2E 05 09 F2 03 93 03'):"(Elemental Resistance)",
-            HexToByte('02 2E 05 09 F2 03 94 03'):"(Fire)",
-            HexToByte('02 2E 05 09 F2 03 95 03'):"(Ice)",
-            HexToByte('02 2E 05 09 F2 03 96 03'):"(Wind)",
-            HexToByte('02 2E 05 09 F2 03 97 03'):"(Earth)",
-            HexToByte('02 2E 05 09 F2 03 98 03'):"(Lightning)",
-            HexToByte('02 2E 05 09 F2 03 99 03'):"(Water)",
-            HexToByte('02 2E 05 09 F2 03 9A 03'):"(Astral)",
-            HexToByte('02 2E 05 09 F2 03 9B 03'):"(Umbral)",
-            HexToByte('02 2E 05 09 F2 03 9C 03'):"(Guardian)",
-            HexToByte('02 2E 05 09 F2 03 9D 03'):"(Nameday)",
-            HexToByte('02 2E 05 09 F2 03 9E 03'):"(Race)",
-            HexToByte('02 2E 05 09 F2 03 9F 03'):"(Clan)",
-            HexToByte('02 2E 05 09 F2 03 A0 03'):"(Gender)",
-            HexToByte('02 2E 05 09 F2 03 A1 03'):"(Title)",
-            HexToByte('02 2E 05 09 F2 03 A2 03'):"(Quality)",
-            HexToByte('02 2E 05 09 F2 03 A3 03'):"(☆☆☆)",
-            HexToByte('02 2E 05 09 F2 03 A4 03'):"(☆☆)",
-            HexToByte('02 2E 05 09 F2 03 A5 03'):"(☆)",
-            HexToByte('02 2E 05 09 F2 03 A6 03'):"(Durability)",
-            HexToByte('02 2E 05 09 F2 03 AC 03'):"(To Repair)",
-            HexToByte('02 2E 05 09 F2 03 AD 03'):"(Status Effect)",
-            HexToByte('02 2E 05 09 F2 03 AE 03'):"(Cast Time)",
-            HexToByte('02 2E 05 09 F2 03 AF 03'):"(Recast Time)",
-            HexToByte('02 2E 05 09 F2 03 B0 03'):"(KO'd)",
-            HexToByte('02 2E 05 09 F2 03 B1 03'):"(Craft)",
-            HexToByte('02 2E 05 09 F2 03 B2 03'):"(Gathering)",
-            HexToByte('02 2E 05 09 F2 03 B3 03'):"(Negotiate)",
-            HexToByte('02 2E 05 09 F2 03 B4 03'):"(Guild Mark)",
-            HexToByte('02 2E 05 09 F2 03 B5 03'):"(Mark)",
-            HexToByte('02 2E 05 09 F2 03 B6 03'):"(Linkshell)",
-            HexToByte('02 2E 05 09 F2 03 B7 03'):"(Linkpearl)",
-            HexToByte('02 2E 05 09 F2 03 B8 03'):"(Active Mode)",
-            HexToByte('02 2E 05 09 F2 03 B9 03'):"(Passive Mode)",
-            HexToByte('02 2E 05 09 F2 03 BA 03'):"(Action)",
-            HexToByte('02 2E 05 09 F2 03 BB 03'):"(Magic)",
-            HexToByte('02 2E 05 09 F2 03 BC 03'):"(Weaponskill)",
-            HexToByte('02 2E 05 09 F2 03 BD 03'):"(Ability)",
-            HexToByte('02 2E 05 09 F2 03 BE 03'):"(Trait)",
-            HexToByte('02 2E 05 09 F2 03 BF 03'):"(Gathering Actions)",
-            HexToByte('02 2E 05 09 F2 03 C0 03'):"(Synthesis Actions)",
-            HexToByte('02 2E 05 09 F2 03 C1 03'):"(Engage)",
-            HexToByte('02 2E 05 09 F2 03 C2 03'):"(Disengage)",
-            HexToByte('02 2E 05 09 F2 03 C3 03'):"(Incapacitated)",
-            HexToByte('02 2E 05 09 F2 03 C4 03'):"(Battle Regimen)",
-            HexToByte('02 2E 05 09 F2 03 C5 03'):"(Enmity)",
-            HexToByte('02 2E 05 09 F2 03 C6 03'):"(Loot)",
-            HexToByte('02 2E 05 09 F2 03 C7 03'):"(Enemy Sign)",
-            HexToByte('02 2E 05 09 F2 03 C8 03'):"(Ally Sign)",
-            HexToByte('02 2E 05 09 F2 03 C9 03'):"(Target)",            
-            HexToByte('02 2E 05 09 F2 03 CA 03'):"((Gear) Affinity)",
-            HexToByte('02 2E 05 09 F2 03 CB 03'):"(Rare)",
-            HexToByte('02 2E 05 09 F2 03 CC 03'):"(Unique)",
-            HexToByte('02 2E 05 09 F2 03 CD 03'):"(Party)",
-            HexToByte('02 2E 05 09 F2 03 CE 03'):"(Map)",
-            HexToByte('02 2E 05 09 F2 03 CF 03'):"(Log out)",
-            HexToByte('02 2E 05 09 F2 03 D0 03'):"(Indent)",
-            HexToByte('02 2E 05 09 F2 03 D1 03'):"(Pattern)",
-            HexToByte('02 2E 05 09 F2 03 D2 03'):"(Retainer)",
-            HexToByte('02 2E 05 09 F2 03 D3 03'):"(Chocobo)",
-            HexToByte('02 2E 05 09 F2 03 D4 03'):"(Aetheryte)",
-            HexToByte('02 2E 05 09 F2 03 D5 03'):"(Aetherial Gate)",
-            HexToByte('02 2E 05 09 F2 03 D6 03'):"(Aetherial Node)",
-            HexToByte('02 2E 05 09 F2 03 D7 03'):"(Trade)",
-            HexToByte('02 2E 05 09 F2 03 D8 03'):"(Bazaar)",
-            HexToByte('02 2E 05 09 F2 03 D9 03'):"(Repair)",
-            HexToByte('02 2E 05 09 F2 03 DA 03'):"(Auto-translation Dictionary)",
-            HexToByte('02 2E 05 09 F2 03 DB 03'):"(Teleport)",            
-            HexToByte('02 2E 05 09 F2 03 DC 03'):"(Warp)",
-            HexToByte('02 2E 05 09 F2 03 DD 03'):"(Guild Shop)",
-            HexToByte('02 2E 05 09 F2 03 DE 03'):"(Hyur)",
-            HexToByte('02 2E 05 09 F2 03 DF 03'):"(Elezen)",
-            HexToByte('02 2E 05 09 F2 03 E0 03'):"(Lalafell)",
-            HexToByte('02 2E 05 09 F2 03 E1 03'):"(Miqo'te)",
-            HexToByte('02 2E 05 09 F2 03 E2 03'):"(Roegadyn)",
-            HexToByte('02 2E 05 09 F2 03 E3 03'):"(Midlander)",
-            HexToByte('02 2E 05 09 F2 03 E4 03'):"(Highlander)",
-            HexToByte('02 2E 05 09 F2 03 E5 03'):"(Wildwood)",
-            HexToByte('02 2E 05 09 F2 03 E6 03'):"(Duskwight)",
-            HexToByte('02 2E 05 09 F2 03 E7 03'):"(Plainsfolk)",
-            HexToByte('02 2E 05 09 F2 03 E8 03'):"(Dunesfolk)",
-            HexToByte('02 2E 05 09 F2 03 E9 03'):"(Seeker of the Sun)",
-            HexToByte('02 2E 05 09 F2 03 EA 03'):"(Keeper of the Moon)",
-            HexToByte('02 2E 05 09 F2 03 EB 03'):"(Sea Wolf)",
-            HexToByte('02 2E 05 09 F2 03 EC 03'):"(Hellsguard)",
-            HexToByte('02 2E 05 09 F2 03 ED 03'):"(Diciples of War)",
-            HexToByte('02 2E 05 09 F2 03 EE 03'):"(Disciples of Magic)",
-            HexToByte('02 2E 05 09 F2 03 EF 03'):"(Disciples of the Land)",
-            HexToByte('02 2E 05 09 F2 03 F0 03'):"(Disciples of the Hand)",
-            HexToByte('02 2E 05 0A F2 04 B1 03'):"(/?)",
-            HexToByte('02 2E 05 0A F2 04 B2 03'):"(/action)",
-            HexToByte('02 2E 05 0A F2 04 B3 03'):"(/angry)",
-            HexToByte('02 2E 05 0A F2 04 B4 03'):"(/areaofeffect)",
-            HexToByte('02 2E 05 0A F2 04 B5 03'):"(/automove)",
-            HexToByte('02 2E 05 0A F2 04 B6 03'):"(/away)",
-            HexToByte('02 2E 05 0A F2 04 B7 03'):"(/battlemode)",
-            HexToByte('02 2E 05 0A F2 04 B8 03'):"(/battleregimen)",
-            HexToByte('02 2E 05 0A F2 04 B9 03'):"(/beckon)",
-            HexToByte('02 2E 05 0A F2 04 BA 03'):"(/blacklist)",
-            HexToByte('02 2E 05 0A F2 04 BB 03'):"(/blush)",
-            HexToByte('02 2E 05 0A F2 04 BC 03'):"(/bow)",
-            HexToByte('02 2E 05 0A F2 04 BE 03'):"(/chatmode)",
-            HexToByte('02 2E 05 0A F2 04 BF 03'):"(/check)",
-            HexToByte('02 2E 05 0A F2 04 C0 03'):"(/cheer)",
-            HexToByte('02 2E 05 0A F2 04 C1 03'):"(/chuckle)",
-            HexToByte('02 2E 05 0A F2 04 C2 03'):"(/clap)",
-            HexToByte('02 2E 05 0A F2 04 C3 03'):"(/clock)",
-            HexToByte('02 2E 05 0A F2 04 C4 03'):"(/comfort)",
-            HexToByte('02 2E 05 0A F2 04 C6 03'):"(/congratulate)",
-            HexToByte('02 2E 05 0A F2 04 C7 03'):"(/cry)",
-            HexToByte('02 2E 05 0A F2 04 C8 03'):"(/dance)",
-            HexToByte('02 2E 05 0A F2 04 C9 03'):"(/decline)",
-            HexToByte('02 2E 05 0A F2 04 CA 03'):"(/deny)",
-            HexToByte('02 2E 05 0A F2 04 CD 03'):"(/display)",
-            HexToByte('02 2E 05 0A F2 04 CB 03'):"(/doubt)",
-            HexToByte('02 2E 05 0A F2 04 CC 03'):"(/doze)",
-            HexToByte('02 2E 05 0A F2 04 CE 03'):"(/dusteffect)",
-            HexToByte('02 2E 05 0A F2 04 CF 03'):"(/echo)",
-            HexToByte('02 2E 05 0A F2 04 D0 03'):"(/emote)",
-            HexToByte('02 2E 05 0A F2 04 D1 03'):"(/equip)",
-            HexToByte('02 2E 05 0A F2 04 D2 03'):"(/equipaction)",
-            HexToByte('02 2E 05 0A F2 04 D3 03'):"(/examineself)",
-            HexToByte('02 2E 05 0A F2 04 D4 03'):"(/extendeddraw)",
-            HexToByte('02 2E 05 0A F2 04 D6 03'):"(/friendlist)",
-            HexToByte('02 2E 05 0A F2 04 D7 03'):"(/fume)",
-            HexToByte('02 2E 05 0A F2 04 D8 03'):"(/furious)",
-            HexToByte('02 2E 05 0A F2 04 D9 03'):"(/goodbye)",
-            HexToByte('02 2E 05 0A F2 04 DB 03'):"(/item)",
-            HexToByte('02 2E 05 0A F2 04 DC 03'):"(/join)",
-            HexToByte('02 2E 05 0A F2 04 DD 03'):"(/joy)",
-            HexToByte('02 2E 05 0A F2 04 DE 03'):"(/kneel)",
-            HexToByte('02 2E 05 0A F2 04 DF 03'):"(/laugh)",
-            HexToByte('02 2E 05 0A F2 04 E0 03'):"(/linkshell)",
-            HexToByte('02 2E 05 0A F2 04 E2 03'):"(/lockon)",
-            HexToByte('02 2E 05 0A F2 04 E3 03'):"(/logout)",
-            HexToByte('02 2E 05 0A F2 04 E4 03'):"(/lookout)",
-            HexToByte('02 2E 05 0A F2 04 E5 03'):"(/loot)",   
-            HexToByte('02 2E 05 0A F2 04 E7 03'):"(/map)",
-            HexToByte('02 2E 05 0A F2 04 E8 03'):"(/marking)",
-            HexToByte('02 2E 05 0A F2 04 E9 03'):"(/me)",
-            HexToByte('02 2E 05 0A F2 04 EA 03'):"(/meh)",
-            HexToByte('02 2E 05 0A F2 04 EB 03'):"(/names)",
-            HexToByte('02 2E 05 0A F2 04 EC 03'):"(/no)",
-            HexToByte('02 2E 05 0A F2 04 EE 03'):"(/panic)",
-            HexToByte('02 2E 05 0A F2 04 EF 03'):"(/party)",
-            HexToByte('02 2E 05 0A F2 04 F0 03'):"(/partycmd)",
-            HexToByte('02 2E 05 0A F2 04 F1 03'):"(/physics)",
-            HexToByte('02 2E 05 0A F2 04 F3 03'):"(/point)",
-            HexToByte('02 2E 05 0A F2 04 F4 03'):"(/poke)",
-            HexToByte('02 2E 05 0A F2 04 F5 03'):"(/profanity)",
-            HexToByte('02 2E 05 0A F2 04 F6 03'):"(/psych)",
-            HexToByte('02 2E 05 0A F2 04 F7 03'):"(/rally)",
-            HexToByte('02 2E 05 0A F2 04 F8 03'):"(/recast)",
-            HexToByte('02 2E 05 0A F2 04 F9 03'):"(/salute)",
-            HexToByte('02 2E 05 0A F2 04 FA 03'):"(/say)",
-            HexToByte('02 2E 05 0A F2 04 FB 03'):"(/scrollingbattletext)",
-            HexToByte('02 2E 05 0A F2 04 FD 03'):"(/shadow)",
-            HexToByte('02 2E 05 0A F2 04 FE 03'):"(/shocked)",
-            HexToByte('02 2E 05 0A F2 04 FF 03'):"(/shout)",
-            HexToByte('02 2E 04 0A F1 05 03'):"(/shrug)",
-            HexToByte('02 2E 05 0A F2 05 01 03'):"(/sit)",
-            HexToByte('02 2E 05 0A F2 05 02 03'):"(/soothe)",
-            HexToByte('02 2E 05 0A F2 05 03 03'):"(/stagger)",
-            HexToByte('02 2E 05 0A F2 05 04 03'):"(/stretch)",
-            HexToByte('02 2E 05 0A F2 05 05 03'):"(/sulk)",
-            HexToByte('02 2E 05 0A F2 05 06 03'):"(/supportdesk)",
-            HexToByte('02 2E 05 0A F2 05 07 03'):"(/surprised)",
-            HexToByte('02 2E 05 0A F2 05 09 03'):"(/targetnpc)",
-            HexToByte('02 2E 05 0A F2 05 0A 03'):"(/targetpc)",
-            HexToByte('02 2E 05 0A F2 05 0B 03'):"(/tell)",
-            HexToByte('02 2E 05 0A F2 05 15 03'):"(/textclear)",
-            HexToByte('02 2E 05 0A F2 05 0C 03'):"(/think)",            
-            HexToByte('02 2E 05 0A F2 05 0D 03'):"(/thumbsup)",
-            HexToByte('02 2E 05 0A F2 05 0E 03'):"(/upset)",
-            HexToByte('02 2E 05 0A F2 05 10 03'):"(/wait)",
-            HexToByte('02 2E 05 0A F2 05 11 03'):"(/wave)",
-            HexToByte('02 2E 05 0A F2 05 12 03'):"(/welcome)",
-            HexToByte('02 2E 05 0A F2 05 14 03'):"(/yes)",
-            HexToByte('02 2E 05 0B F2 05 DD 03'):"(North)",
-            HexToByte('02 2E 05 0B F2 05 DE 03'):"(South)",
-            HexToByte('02 2E 05 0B F2 05 DF 03'):"(East)",
-            HexToByte('02 2E 05 0B F2 05 E0 03'):"(West)",
-            HexToByte('02 2E 05 0B F2 05 E1 03'):"(Up)",
-            HexToByte('02 2E 05 0B F2 05 E2 03'):"(Down)",
-            HexToByte('02 2E 05 0B F2 05 E3 03'):"(Right)",
-            HexToByte('02 2E 05 0B F2 05 E4 03'):"(Left)",
-            HexToByte('02 2E 05 0B F2 05 E5 03'):"(Surface)",
-            HexToByte('02 2E 05 0B F2 05 E6 03'):"(Rear)",
-            HexToByte('02 2E 05 0B F2 05 E7 03'):"(Side)",
-            HexToByte('02 2E 05 0B F2 05 E8 03'):"(Front)",
-            HexToByte('02 2E 05 0B F2 05 E9 03'):"(Middle)",
-            HexToByte('02 2E 05 0B F2 05 EA 03'):"(Flank)",
-            HexToByte('02 2E 05 0B F2 05 EB 03'):"(Inside)",
-            HexToByte('02 2E 05 0B F2 05 EC 03'):"(Outside)",
-            HexToByte('02 2E 05 0B F2 05 ED 03'):"(This way)",
-            HexToByte('02 2E 05 0B F2 05 EE 03'):"(Over there)",
-            HexToByte('02 2E 05 0B F2 05 EF 03'):"(That way)",
-            HexToByte('02 2E 05 0C F2 06 41 03'):"(Day before yesterday)",
-            HexToByte('02 2E 05 0C F2 06 42 03'):"(Yesterday)",
-            HexToByte('02 2E 05 0C F2 06 43 03'):"(Today)",
-            HexToByte('02 2E 05 0C F2 06 44 03'):"(Tomorrow)",
-            HexToByte('02 2E 05 0C F2 06 45 03'):"(Day after tomorrow)",
-            HexToByte('02 2E 05 0C F2 06 46 03'):"(Last week)",
-            HexToByte('02 2E 05 0C F2 06 47 03'):"(This week)",
-            HexToByte('02 2E 05 0C F2 06 48 03'):"(Next week)",
-            HexToByte('02 2E 05 0C F2 06 49 03'):"(a.m.)",
-            HexToByte('02 2E 05 0C F2 06 4A 03'):"(p.m.)",
-            HexToByte('02 2E 05 0C F2 06 4B 03'):"(Morning)",
-            HexToByte('02 2E 05 0C F2 06 4C 03'):"(Afternoon)",
-            HexToByte('02 2E 05 0C F2 06 4D 03'):"(Night)",
-            HexToByte('02 2E 05 0C F2 06 4E 03'):"(Day of the week)",
-            HexToByte('02 2E 05 0C F2 06 4F 03'):"(Sunday)",
-            HexToByte('02 2E 05 0C F2 06 50 03'):"(Monday)",
-            HexToByte('02 2E 05 0C F2 06 51 03'):"(Tuesday)",
-            HexToByte('02 2E 05 0C F2 06 52 03'):"(Wednesday)",
-            HexToByte('02 2E 05 0C F2 06 53 03'):"(Thursday)",
-            HexToByte('02 2E 05 0C F2 06 54 03'):"(Friday)",
-            HexToByte('02 2E 05 0C F2 06 55 03'):"(Saturday)",
-            HexToByte('02 2E 05 0C F2 06 56 03'):"(Holiday)",
-            HexToByte('02 2E 05 0C F2 06 57 03'):"(Break)",
-            HexToByte('02 2E 05 0C F2 06 5A 03'):"(Second)",
-            HexToByte('02 2E 05 0C F2 06 58 03'):"(Long time)",
-            HexToByte('02 2E 05 0C F2 06 59 03'):"(Short time)",
-            HexToByte('02 2E 05 0C F2 06 5B 03'):"(Minute)",
-            HexToByte('02 2E 05 0C F2 06 5C 03'):"(Hour)",
-            HexToByte('02 2E 05 0C F2 06 5D 03'):"(Time remaining)",
-            HexToByte('02 2E 05 0C F2 06 5E 03'):"(January)",
-            HexToByte('02 2E 05 0C F2 06 5F 03'):"(February)",
-            HexToByte('02 2E 05 0C F2 06 60 03'):"(March (Month))",
-            HexToByte('02 2E 05 0C F2 06 61 03'):"(April)",
-            HexToByte('02 2E 05 0C F2 06 62 03'):"(May)",
-            HexToByte('02 2E 05 0C F2 06 63 03'):"(June)",
-            HexToByte('02 2E 05 0C F2 06 64 03'):"(July)",
-            HexToByte('02 2E 05 0C F2 06 65 03'):"(August)",
-            HexToByte('02 2E 05 0C F2 06 66 03'):"(September)",
-            HexToByte('02 2E 05 0C F2 06 67 03'):"(October)",
-            HexToByte('02 2E 05 0C F2 06 68 03'):"(November)",
-            HexToByte('02 2E 05 0C F2 06 69 03'):"(December)",
-            HexToByte('02 2E 05 0D F2 06 A5 03'):"(Connection Speed)",
-            HexToByte('02 2E 05 0D F2 06 A6 03'):"(Blacklist)",
-            HexToByte('02 2E 05 0D F2 06 A7 03'):"(Friend List)",
-            HexToByte('02 2E 05 0D F2 06 A8 03'):"(Config)",
-            HexToByte('02 2E 05 0D F2 06 A9 03'):"(Connection)",
-            HexToByte('02 2E 05 0D F2 06 AA 03'):"(Screenshot)",
-            HexToByte('02 2E 05 0D F2 06 AB 03'):"(Patch)",
-            HexToByte('02 2E 05 0D F2 06 AC 03'):"(Version)",
-            HexToByte('02 2E 05 0D F2 06 AD 03'):"(Connection Lost)",
-            HexToByte('02 2E 05 0D F2 06 AE 03'):"(Lag)",
-            HexToByte('02 2E 05 0D F2 06 AF 03'):"(Filter)",
-            HexToByte('02 2E 05 0D F2 06 B0 03'):"(Client)",
-            HexToByte('02 2E 05 0D F2 06 B1 03'):"(Backup)",
-            HexToByte('02 2E 05 0D F2 06 B3 03'):"(Save)",
-            HexToByte('02 2E 05 0D F2 06 B4 03'):"(TV)",
-            HexToByte('02 2E 05 0D F2 06 B5 03'):"(Modem)",
-            HexToByte('02 2E 05 0D F2 06 B6 03'):"(Monitor)",
-            HexToByte('02 2E 05 0D F2 06 B7 03'):"(Log off)",
-            HexToByte('02 2E 05 0D F2 06 B8 03'):"(Log on)",
-            HexToByte('02 2E 05 0D F2 06 B9 03'):"(Hard Disk)",
-            HexToByte('02 2E 05 0D F2 06 BA 03'):"(Server)",
-            HexToByte('02 2E 05 0D F2 06 BB 03'):"(Macro)",
-            HexToByte('02 2E 05 0E F2 07 09 03'):"(Online)",
-            HexToByte('02 2E 05 0E F2 07 0A 03'):"(Away)",
-            HexToByte('02 2E 05 0F F2 07 6D 03'):"(Numeric keypad)",
-            HexToByte('02 2E 05 0F F2 07 6E 03'):"(Arrow keys)",
-            HexToByte('02 2E 05 0F F2 07 6F 03'):"(Tab key)",
-            HexToByte('02 2E 05 0F F2 07 70 03'):"(Enter key)",
-            HexToByte('02 2E 05 0F F2 07 71 03'):"(End key)",
-            HexToByte('02 2E 05 0F F2 07 72 03'):"(Num Lock key)",
-            HexToByte('02 2E 05 0F F2 07 73 03'):"(Function keys)",
-            HexToByte('02 2E 05 0F F2 07 74 03'):"(Spacebar)",
-            HexToByte('02 2E 05 0F F2 07 75 03'):"(Backspace key)",
-            HexToByte('02 2E 05 0F F2 07 76 03'):"(Halfwidth/Fullwidth key)",
-            HexToByte('02 2E 05 0F F2 07 77 03'):"(Alt key)",
-            HexToByte('02 2E 05 0F F2 07 78 03'):"(Insert key)",
-            HexToByte('02 2E 05 0F F2 07 79 03'):"(Page Down key)",
-            HexToByte('02 2E 05 0F F2 07 7A 03'):"(Home key)",
-            HexToByte('02 2E 05 0F F2 07 7B 03'):"(Page Up key)",
-            HexToByte('02 2E 05 0F F2 07 7C 03'):"(Caps Lock key)",
-            HexToByte('02 2E 05 0F F2 07 7D 03'):"(Shift key)",
-            HexToByte('02 2E 05 0F F2 07 7E 03'):"(Esc key)",
-            HexToByte('02 2E 05 0F F2 07 7F 03'):"(Ctrl key)",
-            HexToByte('02 2E 05 0F F2 07 80 03'):"(Delete key)",            
-            HexToByte('02 2E 05 10 F2 07 D1 03'):"(notice)",
-            HexToByte('02 2E 05 10 F2 07 D2 03'):"(place)",
-            HexToByte('02 2E 05 10 F2 07 D3 03'):"(meat)",
-            HexToByte('02 2E 05 10 F2 07 D4 03'):"(train)",
-            HexToByte('02 2E 05 10 F2 07 D5 03'):"(last)",
-            HexToByte('02 2E 05 10 F2 07 D7 03'):"(question)",
-            HexToByte('02 2E 05 10 F2 07 D6 03'):"(death)",
-            HexToByte('02 2E 05 10 F2 07 D8 03'):"(joy)",
-            HexToByte('02 2E 05 10 F2 07 D9 03'):"(mistake)",
-            HexToByte('02 2E 05 10 F2 07 DA 03'):"(purpose)",
-            HexToByte('02 2E 05 10 F2 07 DB 03'):"(half)",
-            HexToByte('02 2E 05 10 F2 07 DC 03'):"(date)",
-            HexToByte('02 2E 05 10 F2 07 DD 03'):"(secret)",
-            HexToByte('02 2E 05 10 F2 07 DE 03'):"(position)",
-            HexToByte('02 2E 05 10 F2 07 DF 03'):"(lie)",
-            HexToByte('02 2E 05 10 F2 07 E0 03'):"(excitement)",
-            HexToByte('02 2E 05 10 F2 07 E1 03'):"(money)",
-            HexToByte('02 2E 05 10 F2 07 E2 03'):"(fear)",
-            HexToByte('02 2E 05 10 F2 07 E3 03'):"(friend)",
-            HexToByte('02 2E 05 10 F2 07 E4 03'):"(entrance)",
-            HexToByte('02 2E 05 10 F2 07 E5 03'):"(exit)",
-            HexToByte('02 2E 05 10 F2 07 E6 03'):"(mine)",
-            HexToByte('02 2E 05 10 F2 07 E7 03'):"(fun)",
-            HexToByte('02 2E 05 10 F2 07 E8 03'):"(I)",
-            HexToByte('02 2E 05 10 F2 07 E9 03'):"(you)",            
-            HexToByte('02 2E 03 11 02 03'):"(Halone, the Fury)",
-            HexToByte('02 2E 03 11 03 03'):"(Menphina, the Lover)",
-            HexToByte('02 2E 03 11 04 03'):"(Thaliak, the Scholar)",
-            HexToByte('02 2E 03 11 05 03'):"(Nymeia, the Spinner)",
-            HexToByte('02 2E 03 11 06 03'):"(Llymlaen, the Navigator)",
-            HexToByte('02 2E 03 11 07 03'):"(Oschon, the Wanderer)",
-            HexToByte('02 2E 03 11 08 03'):"(Byregot, the Builder)",
-            HexToByte('02 2E 03 11 09 03'):"(Rhalgr, the Destroyer)",
-            HexToByte('02 2E 03 11 0A 03'):"(Azeyma, the Warden)",
-            HexToByte('02 2E 03 11 0B 03'):"(Nald'thal, the Traders)",
-            HexToByte('02 2E 03 11 0C 03'):"(Nophica, the Matron)",
-            HexToByte('02 2E 03 11 0D 03'):"(Althyk, the Keeper)",
-            HexToByte('02 2E 03 12 02 03'):"(Main hand)",
-            HexToByte('02 2E 03 12 03 03'):"(Off Hand)",
-            HexToByte('02 2E 03 12 06 03'):"(Throwing Weapon)",
-            HexToByte('02 2E 03 12 07 03'):"(Pack)",
-            HexToByte('02 2E 03 12 08 03'):"(Pouch)",
-            HexToByte('02 2E 03 12 0A 03'):"(Head)",
-            HexToByte('02 2E 03 12 0B 03'):"(Undershirt)",
-            HexToByte('02 2E 03 12 0C 03'):"(Body)",
-            HexToByte('02 2E 03 12 0D 03'):"(Undergarment)",
-            HexToByte('02 2E 03 12 0E 03'):"(Legs)",
-            HexToByte('02 2E 03 12 0F 03'):"(Hands)",
-            HexToByte('02 2E 03 12 10 03'):"(Feet)",
-            HexToByte('02 2E 03 12 11 03'):"(Waist)",
-            HexToByte('02 2E 03 12 12 03'):"(Neck)",
-            HexToByte('02 2E 03 12 13 03'):"(Right Ear)",
-            HexToByte('02 2E 03 12 14 03'):"(Left Ear)",
-            HexToByte('02 2E 03 12 15 03'):"(Right Wrist)",
-            HexToByte('02 2E 03 12 16 03'):"(Left Wrist)",
-            HexToByte('02 2E 03 12 17 03'):"(Right Index Finger)",
-            HexToByte('02 2E 03 12 18 03'):"(Left Index Finger)",
-            HexToByte('02 2E 03 12 19 03'):"(Right Ring Finger)",
-            HexToByte('02 2E 03 12 20 03'):"(Left Right Finger)", # may be buggy
-            HexToByte('02 2E 03 12'):"(Left Right Finger)", # may be buggy
-            HexToByte('02 2E 03 13 03 03'):"(Hand-to-Hand)",
-            HexToByte('02 2E 03 13 04 03'):"(Sword)",
-            HexToByte('02 2E 03 13 05 03'):"(Axe)",
-            HexToByte('02 2E 03 13 08 03'):"(Archery)",
-            HexToByte('02 2E 03 13 09 03'):"(Polearm)",
-            HexToByte('02 2E 03 13 0B 03'):"(Shield)",
-            HexToByte('02 2E 03 13 17 03'):"(Thaumaturgy)",
-            HexToByte('02 2E 03 13 18 03'):"(Conjury)",
-            HexToByte('02 2E 03 13 1E 03'):"(Woodworking)",
-            HexToByte('02 2E 03 13 1F 03'):"(Smithing)",
-            HexToByte('02 2E 03 13 20 03'):"(Armorcraft)",
-            HexToByte('02 2E 03 13 21 03'):"(Goldsmithing)",
-            HexToByte('02 2E 03 13 22 03'):"(Leatherworking)",
-            HexToByte('02 2E 03 13 23 03'):"(Clothcraft)",
-            HexToByte('02 2E 03 13 24 03'):"(Alchemy)",
-            HexToByte('02 2E 03 13 25 03'):"(Cooking)",
-            HexToByte('02 2E 03 13 28 03'):"(Mining)",
-            HexToByte('02 2E 03 13 29 03'):"(Botany)",
-            HexToByte('02 2E 03 13 2A 03'):"(Fishing)",
-            HexToByte('02 2E 03 14 03 03'):"(Pugilist)",
-            HexToByte('02 2E 03 14 04 03'):"(Gladiator)",
-            HexToByte('02 2E 03 14 05 03'):"(Marauder)",
-            HexToByte('02 2E 03 14 08 03'):"(Archer)",
-            HexToByte('02 2E 03 14 09 03'):"(Lancer)",
-            HexToByte('02 2E 03 14 17 03'):"(Thaumaturge)",
-            HexToByte('02 2E 03 14 18 03'):"(Conjurer)",
-            HexToByte('02 2E 03 14 1E 03'):"(Carpenter)",
-            HexToByte('02 2E 03 14 1F 03'):"(Blacksmith)",
-            HexToByte('02 2E 03 14 20 03'):"(Armorer)",
-            HexToByte('02 2E 03 14 21 03'):"(Goldsmith)",
-            HexToByte('02 2E 03 14 22 03'):"(Leatherworker)",
-            HexToByte('02 2E 03 14 23 03'):"(Weaver)",
-            HexToByte('02 2E 03 14 24 03'):"(Alchemist)",
-            HexToByte('02 2E 03 14 25 03'):"(Culinarian)",
-            HexToByte('02 2E 03 14 28 03'):"(Miner)",
-            HexToByte('02 2E 03 14 29 03'):"(Botanist)",
-            HexToByte('02 2E 03 14 2A 03'):"(Fisher)",            
-            }
+        self.autotranslateheader = b'\x02\x2E'
+
+    def monsterIsNM(self, monster):
+        NMList = [u'アルシュ', u'アンノウンソルジャー', u'ウラエウス', u'エルダーモスホーン', u'オールドシックスアームズ', u'カクタージャック', u'クィーンボリート', u'グゥーブー', u'グルタナスガーティ', u'グレートバッファロー', u'シロッコ', u'ジャッカネイプス', u'スピットファイア', u'スリプリーサイクス', u'ダウニーダンスタン', u'ダディーロングレッグ', u'ドドレ', u'ネストコマンダー', u'バルディ', u'バロメッツ', u'パイア', u'ピュラウスタ', u'フレンジード・オーレリア', u'ブラッディウルフ', u'プリンスオブペスト', u'ボムバロン', u'モスホーン・ナニー', u'モスホーン・ビリー', u'太っ腹のホットポックス', u'弾指のココルン']
+        return monster.lower() in NMList
 
     def printCrafting(self, currentcrafting):
-        #self.craftingdata
         #print currentcrafting
-        #raw_input("")
+        self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
+        totalprogress = 0
+        finalquality = 0
+        finaldurability = 0
+        for action in currentcrafting["actions"]:
+            if len(action[1]) > 0:
+                totalprogress = totalprogress + action[1][0]
+            if len(action[2]) > 0:
+                finaldurability = finaldurability + action[2][0]
+            if len(action[3]) > 0:
+                finalquality = finalquality + action[3][0]
+        itemsused = ""
+        if len(currentcrafting["ingredients"]) == 0:
+            itemsused = u'リーヴは食材を使用しないでください。'
+        else:
+            inglist = []
+            first = True
+            for item in currentcrafting["ingredients"]:
+                if first:
+                    itemsused = str(item[1]) + " x " + item[0]
+                    first = False
+                else:
+                    itemsused = itemsused + ", " + str(item[1]) + " x " + item[0]
+        if currentcrafting["success"]:
+            print u"%sの完成レシピとして%s\n全体の進行状況: %i\n最終的な品質が追加されました: %i\n最終的な耐久性が失わ: %i\n材料使用: %s\n経験値: %i\n修錬値: %i\n日付時刻: %s GMT\n" % (currentcrafting["item"], currentcrafting["class"], totalprogress, finalquality, finaldurability, itemsused, currentcrafting["exp"], currentcrafting["skillpoints"], currentcrafting["datetime"])
+        else:
+            print u"%sとして失敗したレシピ\n全体の進行状況: %i\n最終的な品質が追加されました: %i\n最終的な耐久性が失わ: %i\n材料使用: %s\n経験値: %i\n修錬値: %i\n日付時刻: %s GMT\n" % (currentcrafting["class"], totalprogress, finalquality, finaldurability, itemsused, currentcrafting["exp"], currentcrafting["skillpoints"], currentcrafting["datetime"])
+        self.craftingdata.append(currentcrafting)
         return
 
     def printDamage(self, currentmonster):
@@ -2431,6 +2001,7 @@ class japanese_parser(ffxiv_parser):
             healingavgcount = 0
             absorbavg = 0
             absorbavgcount = 0
+            totaldamage = 0
             for otherdamage in currentmonster["otherdamage"]:
                 if otherdamage[0] == '':
                     continue
@@ -2456,6 +2027,7 @@ class japanese_parser(ffxiv_parser):
             for damage in currentmonster["damage"]:
                 if damage[0] == '':
                     continue
+                totaldamage = totaldamage + int(damage[0])
                 if damage[1] == True:
                     criticalavg = criticalavg + int(damage[0])
                     criticalavgcount = criticalavgcount + 1
@@ -2481,19 +2053,16 @@ class japanese_parser(ffxiv_parser):
             if currentmonster["miss"] > 0:
                 hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
                 hitpercent = (100 - hitpercent)
-            print u"敗北 %s ⇒ %s\nヒット %%: %i%%\n合計平均ダメージ: %i\nクリティカルの平均ダメージ: %i\nレギュラーの平均被害: %i\n合計ダメージ平均を撮影ヒット: %i\nクリティカルヒットのダメージの平均: %i\nダメージ平均ヒット: %i\nその他から合計ダメージ: %i\n平均ヒーリング: %i\n吸収平均: %i\n経験値: %i\n修錬値: %i\n日付時刻: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, healingavg, absorbavg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
+            print u"敗北 %s ⇒ %s\nヒット %%: %i%%\n被害総額: %i\n合計平均ダメージ: %i\nクリティカルの平均ダメージ: %i\nレギュラーの平均被害: %i\n合計ダメージ平均を撮影ヒット: %i\nクリティカルヒットのダメージの平均: %i\nダメージ平均ヒット: %i\nその他から合計ダメージ: %i\n平均ヒーリング: %i\n吸収平均: %i\n経験値: %i\n修錬値: %i\n日付時刻: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldamage, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, healingavg, absorbavg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
             self.monsterdata.append(currentmonster)
-            #if len(monsterdata) > 20:
-            #    uploadToDB()
+            self.defeated = False
+            self.spset = False
+            self.expset = False
+            self.currentmonster = copy.deepcopy(self.defaultmonster)
 
     def useitem(self, logitem):
-        logitem = logitem.decode('utf-8')
-        if self.craftingcomplete == 1:
-            self.printCrafting(self.currentcrafting)
-            self.currentcrafting = copy.deepcopy(self.defaultcrafting)
-            self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
-            self.craftingcomplete = 0
-        if logitem.find("Standard Synthesis") != -1:
+        #print "useitem" + logitem
+        if logitem.find(u"は作業") != -1:
             # store previous value if valid:
             if self.synthtype != "":
                 self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
@@ -2501,14 +2070,14 @@ class japanese_parser(ffxiv_parser):
                 self.durability = []
                 self.quality = []
             self.synthtype = "Standard"
-        elif logitem.find("Rapid Synthesis") != -1:
+        elif logitem.find(u"突貫") != -1:
             if self.synthtype != "":
                 self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
                 self.progress = []
                 self.durability = []
                 self.quality = []
             self.synthtype = "Rapid"
-        elif logitem.find("Bold Synthesis") != -1:
+        elif logitem.find(u"入魂") != -1:
             if self.synthtype != "":
                 self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
                 self.progress = []
@@ -2516,12 +2085,14 @@ class japanese_parser(ffxiv_parser):
                 self.quality = []
             self.synthtype = "Bold"
         else:
-            #print logitem
-            # TODO: need to handle all special types or they will be ingredients, setup
-            # an array with all traits and abilities and compare.
+            # TODO: Need to handle ingredients in Japanese.
             if logitem.find("You use a") != -1:
                 ingcount = 1
             elif logitem.find("Touch Up") != -1:
+                return
+            elif logitem.find("Preserve") != -1:
+                return
+            elif logitem.find("Blinding Speed") != -1:
                 return
             else:
                 try:
@@ -2537,90 +2108,99 @@ class japanese_parser(ffxiv_parser):
     
     def engaged(self, logitem):
         if self.craftingcomplete == 1:
+            if self.synthtype != "":
+                self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
             self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
             self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
             self.craftingcomplete = 0
+            self.synthtype = ""
+        # TODO: Find the equivelant in japanese
         if logitem.find("You cannot change classes") != -1 or logitem.find("Levequest difficulty") != -1:
             return
-        
         self.defeated = False
         self.spset = False
         self.expset = False
-
         self.currentmonster = copy.deepcopy(self.defaultmonster)
+        
         self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
         if logitem.find(u"の一群を占有した") != -1:
             # this is a party engage
             self.currentmonster["monster"] = logitem[:logitem.find(u"の一群を占有した")]
         else:
             self.currentmonster["monster"] = logitem[:logitem.find(u"を占有した")]
-        # no plural form
-        #self.currentmonster["monster"] = self.currentmonster["monster"].split('\'')[0]
         
     def parse_gathering(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("othergathering " + logitem, 1)
 
     def parse_othergathering(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("othergathering " + logitem, 1)
 
     def parse_leve(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("leve " + logitem, 1)
 
     def parse_chatmessage(self, code, logitem):
-        #tabkey = '02 2E 05 0F F2 07 6F 03'
-        self.echo("chatmessage " + code + logitem, 1)
+        #print "here" + code + logitem
+        global autotranslatearray, currentlanguage
+        if currentlanguage != 'jp':
+            #print "Current Lanuage in JP: " + currentlanguage
+            return
+        #print "starting chat msg"
+        loopcnt = 0
+        while logitem.find(self.autotranslateheader) != -1:
+            loopcnt +=1;
+            if loopcnt > 100:
+                break
+            # has autotranslate value
+            transstart = int(logitem.find(self.autotranslateheader))
+            translen = logitem[transstart + 2]
+            transbytes = logitem[transstart:transstart + translen + 3]
+            groupid, index = self.GetGroupAndIndex(transbytes)
+            result = '(%s)' % (self.lookup(autotranslatearray, str(groupid), str(index), 'ja'))
+            logitem = logitem[:logitem.find(transbytes)] + bytearray(result, 'utf-8') + logitem[logitem.find(transbytes) + len(transbytes):]
+
+        logitem = logitem.decode('utf-8')
+        #self.echo("chatmessage " + code + logitem, 1)
+
         if (code == '1B') or (code == '19'):
-            user = ' '.join(logitem.split(' ')[0:2])
-            message = unicode(logitem)
+            user = ' '.join(logitem.split(' ')[0:2]).strip()
+            message = logitem.strip()
         else:
             logitemparts = logitem.split(":")
             user = logitemparts[0].strip()
             message = unicode(":".join(logitemparts[1:]).strip())
-        try:
-            if message.find(self.autotranslateheader) != -1:
-                # found an auto translate
-                '''
-                if message.startswith("lang"):
-                    msgparts = message.split(" ")
-                    containsit = False
-                    for text, value in self.autotranslate.items():
-                        if message.find(text) != -1:
-                            containsit = True
-                            break
-                    if not containsit:
-                        #pass
-                        self.echo(ByteToHex(message), 0)
-                        self.echo("HexToByte('" + ByteToHex(msgparts[1]) + "'):" + "\"(" + " ".join(msgparts[2:]) + ")\",", 0)
-                '''
-                hasreplacement = False
-                for text, value in self.autotranslate.items():
-                    if message.find(text) != -1:
-                        hasreplacement = True
-                        message = message.replace(text, value)
-                if not hasreplacement:
-                    # Save this up to the server so we can investigate later and add it.
-                    pass
-                self.echo("Message: " + message, 1)
-            #raw_input("tab")
+        
+        try:            
+            chatdate = time.strftime("%d-%m-%y %H-%M-%S",time.gmtime(self.logfiletime))
+            self.prevchatdate = chatdate 
+            self.chatlog.append((code, nullstrip(user), message))
+            self.echo("Code: %s User: %s Message: %s" % (code, user, message), 1)
         except:
             traceback.print_exc(file=sys.stdout)
 
     def parse_npcchat(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("npc chat " + logitem, 1)
 
     def parse_invalidcommand(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("invalid command " + logitem, 1)
 
     def parse_monstereffect(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("other abilities " + logitem, 1)
 
     def parse_othereffect(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         if logitem.find("grants you") != -1:    
             effect = logitem[logitem.find("effect of ") +10:-1]
         self.echo("other abilities " + logitem, 1)
 
     def parse_partyabilities(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         if logitem.find("grants") != -1:
             effect = logitem[logitem.find("effect of ") +10:-1]
         if logitem.find("inflicts") != -1:
@@ -2628,18 +2208,23 @@ class japanese_parser(ffxiv_parser):
         self.echo("other abilities " + logitem, 1)
 
     def parse_otherabilities(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("other abilities " + logitem, 1)
 
     def parse_readyability(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("ready ability " + logitem, 1)
 
     def parse_servermessage(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("server message " + logitem, 1)
 
     def parse_invoke(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("invoke " + logitem, 1)
 
     def parse_inflicts(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         if logitem.find("inflicts you") != -1:
             affliction = logitem[logitem.find("effect of ") +10:-1]
             return
@@ -2648,9 +2233,11 @@ class japanese_parser(ffxiv_parser):
         self.echo("inflicts " + logitem, 1)
 
     def parse_effect(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("effect " + logitem, 1)
 
     def parse_otherrecover(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("otherrecover %s %s" % (code, logitem), 1)
         if logitem.find("MP") != -1:
             return
@@ -2664,6 +2251,7 @@ class japanese_parser(ffxiv_parser):
             self.currentmonster["otherhealing"].append([caster, target, spell, healamount])
 
     def parse_selfcast(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("recover %s %s" % (code, logitem), 1)
         if logitem.find("MP") != -1:
             return
@@ -2690,9 +2278,11 @@ class japanese_parser(ffxiv_parser):
             return
 
     def parse_monstermiss(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         self.echo("monstermiss " + logitem, 1)
 
     def parse_othermiss(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         if logitem.find(u"行動不能状態") != -1 or logitem.find(u"目標が遠すぎます。") != -1 or logitem.find("guard fails.") != -1 or logitem.find(u"効果がなかった") != -1:
             return 
         if logitem.find(u"攻撃を外してしまった") != -1:
@@ -2711,6 +2301,7 @@ class japanese_parser(ffxiv_parser):
         self.echo("othermiss " + logitem, 1)
 
     def parse_miss(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         monster = logitem[logitem.find(u"は") +1:logitem.find(u"に")]
         if monster == self.currentmonster["monster"]:
             self.currentmonster["miss"] += 1
@@ -2718,6 +2309,7 @@ class japanese_parser(ffxiv_parser):
         self.echo("miss " + logitem, 1)
 
     def parse_otherhitdamage(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         attacker = logitem[:logitem.find(u"は")]
         defender = logitem[logitem.find(u"は") +1:logitem.find(u"に")]
         attacktype = logitem[logitem.find(u"「") +1:logitem.find(u"」")]
@@ -2741,6 +2333,7 @@ class japanese_parser(ffxiv_parser):
         self.echo("otherhitdamage " + logitem, 1)
 
     def parse_otherdamage(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         # this one is tricky, the only way to tell if it is damage or a hit is to look at the
         # order of the names and compare to see if it is the monster. Pain in the butt because
         # they both come in from code 55... There are also quite a few variants that do not exist
@@ -2795,6 +2388,7 @@ class japanese_parser(ffxiv_parser):
         self.echo("otherdamage code %s: %s " % (code, logitem), 1)
 
     def parse_hitdamage(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         if logitem.find(u"ダメージを与えた。") != -1:
             if logitem.find(u"⇒　") == -1:
                 return
@@ -2815,7 +2409,7 @@ class japanese_parser(ffxiv_parser):
         self.echo("hitdamage " + logitem, 1)
 
     def parse_damagedealt(self, code, logitem):
-        #if logitem.find("your") != -1 or logitem.find("Your") != -1:
+        logitem = logitem.decode('utf-8')
         # we can ignore From the left / right / back because of the formatting
         # may want to record that later but not really needed for any useful stats
         monster = logitem[logitem.find(u"は") +1:logitem.find(u"に")]
@@ -2838,27 +2432,32 @@ class japanese_parser(ffxiv_parser):
         self.echo("damagedealt " + logitem, 1)
 
     def parse_craftingsuccess(self, code, logitem):
-        #print logitem
+        logitem = logitem.decode('utf-8')
         # Crafting success
-        if logitem.find("You create") != -1:
-            if logitem.find(" of ") != -1:
-                self.currentcrafting["item"] = logitem[logitem.find(" of ")+4:-1]
-            else:
-                self.currentcrafting["item"] = logitem[logitem.find(" a ")+3:-1]
+        if logitem.find(u"完成させた") != -1:
+            #print "Crafting Success: " + logitem
+            self.currentcrafting["item"] = logitem[logitem.find(u'「')+1:logitem.find(u'」')]
+            # TODO: Get created count with -> ×
             self.currentcrafting["success"] = 1
+            self.craftingcomplete = 1
         # botched it
-        if logitem.find("botch") != -1:
+        if logitem.find(u"製作に失敗した") != -1:
             self.currentcrafting["success"] = 0
-        self.craftingcomplete = 1
+            self.craftingcomplete = 1
         
         self.echo("crafting success " + logitem, 1)
 
     def parse_defeated(self, code, logitem):
+        logitem = logitem.decode('utf-8')
+        self.echo("defeated " + logitem, 1)
         if self.craftingcomplete == 1:
+            if self.synthtype != "":
+                self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
             self.printCrafting(self.currentcrafting)
             self.currentcrafting = copy.deepcopy(self.defaultcrafting)
             self.currentcrafting["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
             self.craftingcomplete = 0
+            self.synthtype = ""
         if logitem.find(u"一群") != -1:
             return
         #if logitem.find("defeats you") != -1:
@@ -2872,11 +2471,16 @@ class japanese_parser(ffxiv_parser):
             if monster != self.currentmonster["monster"]:
                 return
             self.defeated = True
-            return
-
-        self.echo("defeated " + logitem, 1)
+        if self.monsterIsNM(self.currentmonster["monster"]) and self.defeated:
+            self.currentmonster["skillpoints"] = 0
+            self.currentmonster["exp"] = 0
+            self.defeated = False
+            self.spset = False
+            self.expset = False
+            self.printDamage(self.currentmonster)
 
     def parse_spexpgain(self, code, logitem):
+        logitem = logitem.decode('utf-8')
         if logitem.find(u"の経験値") != -1:
             points = logitem[logitem.find(u"は")+1:logitem.find(u"の経験値")]
             self.currentmonster["exp"] = int(points)
@@ -2890,6 +2494,12 @@ class japanese_parser(ffxiv_parser):
             self.currentcrafting["skillpoints"] = int(sp)
             self.currentcrafting["class"] = logitem[logitem.find(u"「") + 1:logitem.find(u"」")]
             self.spset = True
+        
+        if self.spset and self.craftingcomplete:
+            self.parse_defeated("", "")
+            self.defeated = False
+            self.spset = False
+            self.expset = False
 
         if self.defeated and self.spset and self.expset:
             self.defeated = False
@@ -2898,36 +2508,43 @@ class japanese_parser(ffxiv_parser):
             self.printDamage(self.currentmonster)
 
         self.echo("spexpgain " + logitem, 1)
+        
+    def throwaway(self, logitem):
+        item = logitem[logitem.find("away the ") + 9:logitem.find(".")]
+        #self.lostitems.append({"datetime":time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime)), "item":item})
 
     def parse_genericmessage(self, code, logitem):
-        if logitem.find(u"を占有した") != -1:
+        try:
+            logitem = logitem.decode('utf-8')
+        except:
+            # specific to: 54 68 65 20 64 61 72 6B 77 69 6E 67 20 64 65 76 69 6C 65 74 20 69 73 20 6D 61 72 6B 65 64 20 77 69 74 68 20 02 12 04 F2 01 29 03 2E
+            return
+        if logitem.find("You throw away") != -1:
+            self.throwaway(logitem)
+        elif logitem.find(u"を占有した") != -1:
             self.engaged(logitem)
-        elif logitem.find("You use") != -1:
+        elif logitem.find(u"開始した") != -1:
             self.useitem(logitem)
-        elif logitem.find("Progress") != -1:
+        elif logitem.find(u"作業進捗") != -1:
             # save progress as array of % and it was an increase or decrease
-            if logitem.find("increases") != -1:
-                self.progress = [logitem[logitem.find("by ") +3:-2], 1]
+            self.progress = [int(logitem[logitem.find(u"作業進捗 ") +5:logitem.find(u"％")]), 1]
+        elif logitem.find(u"素材耐用") != -1:
+            # TODO: Figure out if there is ever an increase rather than 減少した
+            if logitem.find(u"上昇した") != -1:
+                self.durability = [int(logitem[logitem.find(u"が ") +2:logitem.find(u"上昇した")]), 1]
             else:
-                self.progress = [logitem[logitem.find("by ") +3:-2], 0]
-        elif logitem.find("Durability") != -1:
-            if logitem.find("increases") != -1:
-                self.durability = [logitem[logitem.find("by ") +3:-1], 1]
+                self.durability = [int(logitem[logitem.find(u"が ") +2:logitem.find(u"減少した")]), 0]
+        elif logitem.find(u"目標品質") != -1:
+            if logitem.find(u"上昇した") != -1:
+                self.quality = [int(logitem[logitem.find(u"が ") +2:logitem.find(u"上昇した")]), 1]
             else:
-                self.durability = [logitem[logitem.find("by ") +3:-1], 0]
-        elif logitem.find("Quality") != -1:
-            if logitem.find("increases") != -1:
-                self.quality = [logitem[logitem.find("by ") +3:-1], 1]
-            else:
-                self.quality = [logitem[logitem.find("by ") +3:-1], 0]
+                #print logitem
+                #⇒　目標品質度が 11低下した……
+                self.quality = [int(logitem[logitem.find(u"が ") +2:logitem.find(u"低下した")]), 0]
         else:
             pass
-            #print "generic"
-            #print logitem
-       
             
         self.echo("generic " + logitem, 1)
-
 
 def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, password=""):
     global configfile, lastlogparsed
@@ -2978,7 +2595,7 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
                 except:
                     traceback.print_exc(file=sys.stdout)
                 try:
-                    jp_parser.parse_line(unicode(logitem, 'utf-8', errors='replace'))
+                    jp_parser.parse_line(bytearray(logitem))#unicode(logitem, 'utf-8', errors='replace'))
                 except UnicodeDecodeError:
                     pass
                 except:
@@ -2988,6 +2605,7 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
                         return                
                 continue
             en_parser.close()
+            jp_parser.close()
 
         finally:            
             if logfile:
@@ -3000,7 +2618,7 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
         os.remove('newinstall')
     #en_parser.savealllogs()
     # uncomment for debugging to disable uploads
-    return
+    #return
     if logsparsed > 0:
         uploadToDB2(password, [en_parser, jp_parser])
     else:
