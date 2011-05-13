@@ -82,7 +82,7 @@ if os.path.exists('config/') and not os.path.exists('logparser.cfg'):
 else:
     configfile = 'logparser.cfg'
 
-version = 4.4
+version = 4.5
 charactername = ""
 doloop = 0
 app = None
@@ -223,6 +223,11 @@ class ChatViewer(wx.Frame):
             '05': self.WriteLinkshell, # linkshell
             '06': self.WriteLinkshell, # linkshell
             '07': self.WriteLinkshell, # linkshell
+            '08': self.WriteLinkshell, # linkshell
+            '09': self.WriteLinkshell, # linkshell
+            '0A': self.WriteLinkshell, # linkshell
+            '0B': self.WriteLinkshell, # linkshell
+            '0C': self.WriteLinkshell, # linkshell
             '0D': self.WriteTell, # get tell
             '0F': self.WriteLinkshell, # linkshell
             '0E': self.WriteLinkshell, # linkshell
@@ -1119,7 +1124,7 @@ class ffxiv_parser:
     def __init__(self, language): 
         self.language = language
         self.defaultmonster = {"datetime":"", "monster":"", "monstermiss":0, "othermonstermiss":0, "damage":[], "miss":0, "hitdamage":[], "otherdamage":[], "othermiss":[], "spells":[], "healing":[], "otherhealing":[], "otherhitdamage":[], "skillpoints":0, "class":"", "exp":0}
-        self.defaultcrafting = {"datetime":"", "item":"", "actions":[], "ingredients":[], "success":0, "skillpoints":0, "class":"", "exp":0}
+        self.defaultcrafting = {"datetime":"", "item":"", "quantity":0,"actions":[], "ingredients":[], "success":0, "skillpoints":0, "class":"", "exp":0}
         self.characterdata = {"charactername":""}
         self.deathsdata = {"charactername":"", "deaths":[]}
         self.monsterdata = []
@@ -1147,6 +1152,11 @@ class ffxiv_parser:
             '05': self.parse_chatmessage, # linkshell
             '06': self.parse_chatmessage, # linkshell
             '07': self.parse_chatmessage, # linkshell
+            '08': self.parse_chatmessage, # linkshell
+            '09': self.parse_chatmessage, # linkshell
+            '0A': self.parse_chatmessage, # linkshell
+            '0B': self.parse_chatmessage, # linkshell
+            '0C': self.parse_chatmessage, # linkshell
             '0D': self.parse_chatmessage, # get tell
             '0F': self.parse_chatmessage, # linkshell
             '0E': self.parse_chatmessage, # linkshell
@@ -1299,7 +1309,7 @@ class ffxiv_parser:
             self.function_map[code](code, logvalue)
         except: # Exception as e:
             traceback.print_exc(file=sys.stdout)            
-            self.echo("Could not parse code: %s value: %s error: %s" % (code, ByteToHex(logvalue.decode('utf-8')), e), -1)
+            self.echo("Could not parse code: %s value: %s" % (code, ByteToHex(logvalue.decode('utf-8'))), -1)
 
 class english_parser(ffxiv_parser):
     
@@ -1351,7 +1361,7 @@ class english_parser(ffxiv_parser):
                 else:
                     itemsused = itemsused + ", " + str(item[1]) + " x " + item[0]
         if currentcrafting["success"]:
-            print "Completed Recipe for %s as %s\nTotal Progress: %i\nFinal Quality Added: %i\nFinal Durability Lost: %i\nIngredients Used: %s\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentcrafting["item"], currentcrafting["class"], totalprogress, finalquality, finaldurability, itemsused, currentcrafting["exp"], currentcrafting["skillpoints"], currentcrafting["datetime"])
+            print "Completed Recipe for %s as %s\nQuantity: %i\nTotal Progress: %i\nFinal Quality Added: %i\nFinal Durability Lost: %i\nIngredients Used: %s\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentcrafting["item"], currentcrafting["class"], currentcrafting["quantity"], totalprogress, finalquality, finaldurability, itemsused, currentcrafting["exp"], currentcrafting["skillpoints"], currentcrafting["datetime"])
         else:
             print "Failed Recipe as %s\nTotal Progress: %i\nFinal Quality Added: %i\nFinal Durability Lost: %i\nIngredients Used: %s\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentcrafting["class"], totalprogress, finalquality, finaldurability, itemsused, currentcrafting["exp"], currentcrafting["skillpoints"], currentcrafting["datetime"])
         self.craftingdata.append(currentcrafting)
@@ -1361,6 +1371,7 @@ class english_parser(ffxiv_parser):
     def printDamage(self, currentmonster):
         if len(currentmonster["damage"]) > 0:
             hitpercent = 100
+            critpercent = 0
             criticalavg = 0
             criticalavgcount = 0
             regularavg = 0
@@ -1413,6 +1424,8 @@ class english_parser(ffxiv_parser):
                     regularavgcount = regularavgcount + 1
             if crithitdmgavg != 0:
                 crithitdmgavg = crithitdmgavg / crithitdmgavgcount
+            if criticalavgcount > 0:
+                critpercent = int((float(criticalavgcount) / float(len(currentmonster["damage"]))) * 100)
             if hitdmgavg != 0:
                 hitdmgavg = hitdmgavg / hitdmgavgcount
             if crithitdmgavg + hitdmgavg != 0:
@@ -1430,7 +1443,7 @@ class english_parser(ffxiv_parser):
             if currentmonster["miss"] > 0:
                 hitpercent = int((float(currentmonster["miss"]) / float(len(currentmonster["damage"]))) * 100)
                 hitpercent = (100 - hitpercent)
-            print "Defeated %s as %s\nHit %%: %i%%\nTotal Damage: %i\nTotal Avg Dmg: %i\nCrit Avg Dmg: %i\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nHealing Avg: %i\nAbsorb Avg: %i\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldamage, totaldmgavg, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, healingavg, absorbavg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
+            print "Defeated %s as %s\nAccuracy: %i%%\nTotal Damage: %i\nTotal Avg Dmg: %i\nCrit Hit %%: %i\nCrit Avg Dmg: %i%%\nReg Avg Dmg: %i\nTotal Hit Dmg Avg: %i\nCrit Hit Dmg Avg: %i\nHit Dmg Avg: %i\nTotal Dmg From Others: %i\nHealing Avg: %i\nAbsorb Avg: %i\nExp: %i\nSkill Points: %i\nDate Time: %s GMT\n" % (currentmonster["monster"], currentmonster["class"], hitpercent, totaldamage, totaldmgavg, critpercent, criticaldmgavg, regulardmgavg, totalhitdmgavg, crithitdmgavg, hitdmgavg, othertotaldmg, healingavg, absorbavg, currentmonster["exp"], currentmonster["skillpoints"], currentmonster["datetime"])
             self.monsterdata.append(currentmonster)
             self.defeated = False
             self.spset = False
@@ -1567,8 +1580,11 @@ class english_parser(ffxiv_parser):
         self.echo("npc chat " + logitem, 1)
 
     def parse_invalidcommand(self, code, logitem):
-        logitem = logitem.decode('utf-8')
-        self.echo("invalid command " + logitem, 1)
+        try:
+            logitem = logitem.decode('utf-8')
+            self.echo("invalid command " + logitem, 1)
+        except:
+            pass
 
     def parse_monstereffect(self, code, logitem):
         logitem = logitem.decode('utf-8')
@@ -1743,11 +1759,16 @@ class english_parser(ffxiv_parser):
             else:
                 critical = 0
             attackchar = ""
-            if critical:
-                attackchar = logitem[10: logitem.find("'s ")]
+            if logitem.find("Counter!") != -1:
+                # "Counter! Par Shadowmaster hits the great buffalo for 419 points of damage"
+                attackchar = logitem[logitem.find("! ")+2:logitem.find(" hits")]
+                attacktype = "Counter"
             else:
-                attackchar = logitem[: logitem.find("'s ")]
-            attacktype = logitem[logitem.find("'s ") +3:logitem.find(" hits")]
+                if critical:
+                    attackchar = logitem[10: logitem.find("'s ")]
+                else:
+                    attackchar = logitem[: logitem.find("'s ")]
+                attacktype = logitem[logitem.find("'s ") +3:logitem.find(" hits")]
             if logitem.find(" points") != -1:
                 damage = logitem[logitem.find("for ") +4:logitem.find(" points")]
                 self.currentmonster["otherdamage"].append([damage, critical, attacktype, attackchar])
@@ -1792,18 +1813,32 @@ class english_parser(ffxiv_parser):
         logitem = logitem.decode('utf-8')
         # Crafting success
         if logitem.find("You create") != -1:
-            #print "Crafting Success: " + logitem
+            self.currentcrafting["quantity"] = 1
             if logitem.find(" of ") != -1:
                 self.currentcrafting["item"] = logitem[logitem.find(" of ")+4:-1]
             elif logitem.find(" a ") != -1:
                 self.currentcrafting["item"] = logitem[logitem.find(" a ")+3:-1]
             else:
-                self.currentcrafting["item"] = ' '.join(logitem.split(' ')[3:])[:-1]# [logitem.find(" a ")+3:-1]            
+                itemparts = logitem.split(' ')
+                idx = 0
+                for item in itemparts:            
+                    idx += 1;
+                    try:
+                        if item == 'an':
+                            break
+                        self.currentcrafting["quantity"] = int(item)
+                        break
+                    except:
+                        continue
+                self.currentcrafting["item"] = ' '.join(itemparts[idx:])
+            if self.currentcrafting["item"].endswith("."):
+                self.currentcrafting["item"] = self.currentcrafting["item"][:-1]
             self.currentcrafting["success"] = 1
             self.craftingcomplete = 1
         # botched it
         if logitem.find("You botch") != -1:
             #print "Crafting Fail: " + logitem
+            self.currentcrafting["quantity"] = 0
             self.currentcrafting["success"] = 0
             self.craftingcomplete = 1
         
@@ -2186,8 +2221,11 @@ class japanese_parser(ffxiv_parser):
         self.echo("npc chat " + logitem, 1)
 
     def parse_invalidcommand(self, code, logitem):
-        logitem = logitem.decode('utf-8')
-        self.echo("invalid command " + logitem, 1)
+        try:
+            logitem = logitem.decode('utf-8')
+            self.echo("invalid command " + logitem, 1)
+        except:
+            pass
 
     def parse_monstereffect(self, code, logitem):
         logitem = logitem.decode('utf-8')
@@ -2602,7 +2640,7 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
                     traceback.print_exc(file=sys.stdout)
                 if isrunning:
                     if not isrunning():
-                        return                
+                        return
                 continue
             en_parser.close()
             jp_parser.close()
