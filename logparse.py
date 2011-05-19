@@ -82,7 +82,7 @@ if os.path.exists('config/') and not os.path.exists('logparser.cfg'):
 else:
     configfile = 'logparser.cfg'
 
-version = 4.5
+version = 4.7
 charactername = ""
 doloop = 0
 app = None
@@ -455,8 +455,8 @@ class MainFrame(wx.Frame):
         self.SetTitle("FFXIV Log Parser")
         self.filemenu.SetLabel(1, "&Start")
         self.filemenu.SetHelpString(1, " Start Processing Logs")
-        self.filemenu.SetLabel(4, "&Parse All Logs")
-        self.filemenu.SetHelpString(4, " Start Processing All Logs")
+        #self.filemenu.SetLabel(4, "&Parse All Logs")
+        #self.filemenu.SetHelpString(4, " Start Processing All Logs")
         self.filemenu.SetLabel(wx.ID_ABOUT, "&About")
         self.filemenu.SetHelpString(wx.ID_ABOUT, " Information about this program")
         self.filemenu.SetLabel(2, "&Check for New Version")
@@ -484,8 +484,8 @@ class MainFrame(wx.Frame):
         self.SetTitle(u"FFXIVのログパーサー")
         self.filemenu.SetLabel(1, u"開始")
         self.filemenu.SetHelpString(1, u"スタート処理のログ")
-        self.filemenu.SetLabel(4, u"再解析のログ")
-        self.filemenu.SetHelpString(4, u" 再解析のログ")
+        #self.filemenu.SetLabel(4, u"再解析のログ")
+        #self.filemenu.SetHelpString(4, u" 再解析のログ")
         self.filemenu.SetLabel(wx.ID_ABOUT, u"について")
         self.filemenu.SetHelpString(wx.ID_ABOUT, u"このプログラムについての情報")
         self.filemenu.SetLabel(2, u"新しいバージョンの確認")
@@ -527,14 +527,14 @@ class MainFrame(wx.Frame):
 
         # wx.ID_ABOUT and wx.ID_EXIT are standard IDs provided by wxWidgets.
         self.filemenu.Append(1, "&Start"," Start Processing Logs")
-        self.filemenu.Append(4, "&Parse All Logs"," Start Processing All Logs")
+        #self.filemenu.Append(4, "&Parse All Logs"," Start Processing All Logs")
         self.filemenu.Append(wx.ID_ABOUT, "&About"," Information about this program")
         self.filemenu.AppendSeparator()
         self.filemenu.Append(2, "&Check for New Version"," Check for an update to the program")
         self.filemenu.AppendSeparator()
         self.filemenu.Append(wx.ID_EXIT,"E&xit"," Terminate the program")
-        self.Bind(wx.EVT_MENU, self.OnStartCollecting, id=1)
-        self.Bind(wx.EVT_MENU, self.OnStartCollectingAll, id=4)
+        self.Bind(wx.EVT_MENU, self.OnStartCollectingAll, id=1)
+        #self.Bind(wx.EVT_MENU, self.OnStartCollectingAll, id=4)
         self.Bind(wx.EVT_MENU, self.OnCheckVersion, id=2)
         self.Bind(wx.EVT_MENU, self.OnExit, id=wx.ID_EXIT)
         self.Bind(wx.EVT_MENU, self.OnAbout, id=wx.ID_ABOUT)#menuItem)
@@ -839,7 +839,7 @@ THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES, INC
     def OnStartCollecting(self, e):
         global guithread, configfile
         self.filemenu.Enable(1, False)
-        self.filemenu.Enable(4, False)
+        #self.filemenu.Enable(4, False)
         self.btnStart.Disable()
         #try:
         config = ConfigParser.ConfigParser()
@@ -874,7 +874,7 @@ THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES, INC
             dlg.ShowModal() # Show it
             dlg.Destroy() # finally destroy it when finished.
             self.filemenu.Enable(1, True)
-            self.filemenu.Enable(4, True)
+            #self.filemenu.Enable(4, True)
             self.btnStart.Enable()
             return
                 
@@ -952,6 +952,11 @@ class GUIThread(Thread):
 
     def run(self):
         try:
+            en_parser = english_parser()
+            jp_parser = japanese_parser()
+            en_parser.characterdata["charactername"] = self.charactername
+            jp_parser.characterdata["charactername"] = self.charactername
+            parsers = [en_parser, jp_parser]
             self.exitready = 0
             self.stopped = 0
             prev = []
@@ -965,11 +970,11 @@ class GUIThread(Thread):
                     if len(diff) == len(l):
                         files = [i[1] for i in l]
                     else:
-                        files = [i[1] for i in l[len(l)-3:]]
-                    readLogFile(files, self.charactername, isrunning=self.is_running, password=self.password)
+                        files = [i[1] for i in l[len(l)-len(diff):]]
+                    readLogFile(files, self.charactername, isrunning=self.is_running, password=self.password, parsers=parsers)
                 start = datetime.datetime.now()
                 self.status("Waiting for new log data...")
-                while (datetime.datetime.now() - start).seconds < 60:
+                while (datetime.datetime.now() - start).seconds < 5:
                     time.sleep(1)
                     if self.stopped:
                         return
@@ -1052,6 +1057,12 @@ def main():
         if len(args) > 4:
             logmonsterfilter = args[4]
         prev = []
+        
+        en_parser = english_parser()
+        jp_parser = japanese_parser()
+        en_parser.characterdata["charactername"] = charactername
+        jp_parser.characterdata["charactername"] = charactername
+        parsers = [en_parser, jp_parser]
         while 1==1:
             l = [(os.stat(i).st_mtime, i) for i in glob.glob(os.path.join(logpath, '*.log'))]
             l.sort()
@@ -1060,7 +1071,7 @@ def main():
                 prev = l            
                 files = [i[1] for i in sorted(diff)]
                 try:
-                    readLogFile(files, charactername, password=password, logmonsterfilter=logmonsterfilter)
+                    readLogFile(files, charactername, password=password, logmonsterfilter=logmonsterfilter, parsers=parsers)
                 except:
                     traceback.print_exc()
                     
@@ -1307,6 +1318,7 @@ class ffxiv_parser:
         #print self.function_map[code]
         try:
             self.function_map[code](code, logvalue)
+            #print logvalue.decode('utf-8')
         except: # Exception as e:
             traceback.print_exc(file=sys.stdout)            
             self.echo("Could not parse code: %s value: %s" % (code, ByteToHex(logvalue.decode('utf-8'))), -1)
@@ -1333,6 +1345,7 @@ class english_parser(ffxiv_parser):
 
     def monsterIsNM(self, monster):
         NMList = ['alux', 'bardi', 'barometz', 'bloodthirsty wolf', 'bomb baron', 'daddy longlegs', 'dodore', 'downy dunstan', 'elder mosshorn', 'escaped goobbue', 'frenzied aurelia', 'gluttonous gertrude', 'great buffalo', 'haughtpox bloatbelly', 'jackanapes', 'mosshorn billygoat', 'mosshorn nannygoat', 'nest commander', 'pyrausta', 'queen bolete', 'scurrying spriggan', 'sirocco', 'slippery sykes', 'uraeus']
+        #print "%s %r" % (monster.lower(), monster.lower() in NMList)
         return monster.lower() in NMList
             
     def printCrafting(self, currentcrafting):        
@@ -1369,6 +1382,7 @@ class english_parser(ffxiv_parser):
         return
 
     def printDamage(self, currentmonster):
+        #print currentmonster
         if len(currentmonster["damage"]) > 0:
             hitpercent = 100
             critpercent = 0
@@ -1507,6 +1521,7 @@ class english_parser(ffxiv_parser):
             self.currentcrafting["ingredients"].append([ingredient, ingcount])
             
     def engaged(self, logitem):
+        self.echo("engaged " + logitem, 1)
         if self.craftingcomplete == 1:
             if self.synthtype != "":
                 self.currentcrafting["actions"].append([self.synthtype, self.progress, self.durability, self.quality])
@@ -1525,6 +1540,13 @@ class english_parser(ffxiv_parser):
         self.currentmonster["datetime"] = time.strftime("%m/%d/%y %H:%M:%S",time.gmtime(self.logfiletime))
         self.currentmonster["monster"] = logitem[logitem.find("The ") +4:logitem.find(" is")]
         self.currentmonster["monster"] = self.currentmonster["monster"].split('\'')[0]
+        if logitem.find("is engaged.") != -1 and logitem.find("The ") == -1:
+            self.currentmonster["monster"] = logitem[:logitem.find(" is")]
+        if logitem.find("group") != -1:
+            # This is a group start, we need to check to see if it is a NM fight.
+            tmpmonster = logitem[:logitem.find("group")].split('\'')[0]
+            if self.monsterIsNM(tmpmonster):
+                self.currentmonster["monster"] = tmpmonster
         
     def parse_gathering(self, code, logitem):
         logitem = logitem.decode('utf-8')
@@ -1701,28 +1723,61 @@ class english_parser(ffxiv_parser):
         if logitem.find("KO'd target") != -1 or logitem.find("too far away") != -1 or logitem.find("guard fails.") != -1 or logitem.find("fails to take effect.") != -1:
             return
         if logitem.find("evades") != -1:
-            monster = logitem[logitem.find("The ") + 4:logitem.find(" evades")]
+            if logitem.find(self.currentmonster["monster"] + " evades") != -1:
+                monster = logitem[:logitem.find(" evades")]
+            else:
+                monster = logitem[logitem.find("The ") + 4:logitem.find(" evades")]
             if monster == self.currentmonster["monster"]:
-                misschar = logitem[logitem.find("evades") + 7:logitem.find("'s ")]
+                misschar = logitem[logitem.find("evades ") + 7:logitem.find("'s ")]
                 attacktype = logitem[logitem.find("'s ") + 3:logitem.find(".")]
                 self.currentmonster["othermiss"].append([misschar, attacktype])
         else:
             if logitem.find("from the") != -1:
-                monster = logitem[logitem.find("the ") +4:logitem.find(" from the")].split('\'')[0]
+                if logitem.find(self.currentmonster["monster"] + " from the") != -1:
+                    monster = logitem[logitem.find("misses ") +7:logitem.find(" from the")].split('\'')[0]
+                else:
+                    monster = logitem[logitem.find("the ") +4:logitem.find(" from the")].split('\'')[0]
             else:
-                monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
+                if logitem.find("misses the") != -1:
+                    monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
+                else:
+                    monster = logitem[logitem.find("misses ") +7:logitem.find(".")]
             if monster == self.currentmonster["monster"]:
                 misschar = logitem[: logitem.find("'s ")]
                 attacktype = logitem[logitem.find("'s ") + 3:logitem.find(" misses")]
                 self.currentmonster["othermiss"].append([misschar, attacktype])
-
+        # NM monster miss: Uraeus's Body Slam fails.
+        if logitem.find("fails.") != -1:
+            monster = logitem[:logitem.find('\'')]
+            if monster == self.currentmonster["monster"]:
+                self.currentmonster["othermonstermiss"] += 1
         self.echo("othermiss " + logitem, 1)
 
     def parse_miss(self, code, logitem):
         logitem = logitem.decode('utf-8')
-        monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
+        if logitem.find("evades") != -1:
+            if logitem.find("The ") != -1:
+                monster = logitem[logitem.find("The ") +4:logitem.find(" evades")]
+            else:
+                monster = logitem[:logitem.find(" evades")]
+        else:
+            if logitem.find("from the") != -1:
+                if logitem.find("misses the") != -1:
+                    monster = logitem[logitem.find("the ") +4:logitem.find(" from the")].split('\'')[0]
+                else:
+                    monster = logitem[logitem.find("misses ") +7:logitem.find(" from the")].split('\'')[0]
+            else:
+                if logitem.find("misses the") != -1:
+                    monster = logitem[logitem.find("the ") +4:logitem.find(".")].split('\'')[0]
+                else:
+                    monster = logitem[logitem.find("misses ") +7:logitem.find(".")].split('\'')[0]
+        
         if monster == self.currentmonster["monster"]:
             self.currentmonster["miss"] += 1
+        if logitem.find("fails.") != -1:
+            monster = logitem[:logitem.find('\'')]
+            if monster == self.currentmonster["monster"]:
+                self.currentmonster["monstermiss"] += 1
         self.echo("miss " + logitem, 1)
 
     def parse_otherhitdamage(self, code, logitem):
@@ -1730,9 +1785,14 @@ class english_parser(ffxiv_parser):
         if logitem.find("hits ") != -1:
             if logitem.find("points") == -1:
                 return
-            monsterhit = logitem[logitem.find("The ") +4:logitem.find(" hits")]
-            monster = monsterhit.split('\'')[0]
-            attacktype = monsterhit[monsterhit.find("'s ")+3:]
+            if logitem.find("The") != -1:
+                monsterhit = logitem[logitem.find("The ") +4:logitem.find(" hits")]
+                monster = monsterhit.split('\'')[0]
+                attacktype = monsterhit[monsterhit.find("'s ")+3:]
+            else:
+                monsterhit = logitem[:logitem.find(" hits")]
+                monster = monsterhit.split('\'')[0]
+                attacktype = monsterhit[monsterhit.find("'s ")+3:]
             if monster == self.currentmonster["monster"]:
                 if logitem.find("Critical!") != -1:
                     critical = 1
@@ -1749,10 +1809,16 @@ class english_parser(ffxiv_parser):
 
     def parse_otherdamage(self, code, logitem):
         logitem = logitem.decode('utf-8')
-        if logitem.find("from the ") != -1:
-            monster = logitem[logitem.find("the ") +4:logitem.find(" from the")]
+        if logitem.find("hits the") != -1:
+            if logitem.find("from the ") != -1:
+                monster = logitem[logitem.find("the ") +4:logitem.find(" from the")]
+            else:
+                monster = logitem[logitem.find("the ") +4:logitem.find(" for")]
         else:
-            monster = logitem[logitem.find("the ") +4:logitem.find(" for")]
+            if logitem.find("from the ") != -1:
+                monster = logitem[logitem.find("hits ") +5:logitem.find(" from the")]
+            else:
+                monster = logitem[logitem.find("hits ") +5:logitem.find(" for")]
         if monster == self.currentmonster["monster"]:                        
             if logitem.find("Critical!") != -1:
                 critical = 1
@@ -1779,7 +1845,10 @@ class english_parser(ffxiv_parser):
         if logitem.find("hits you") != -1:
             if logitem.find("points") == -1:
                 return
-            monsterhit = logitem[logitem.find("The ") +4:logitem.find(" hits")]
+            if logitem.find("The ") != -1:
+                monsterhit = logitem[logitem.find("The ") +4:logitem.find(" hits")]
+            else:
+                monsterhit = logitem[:logitem.find(" hits")]
             monster = monsterhit.split('\'')[0]
             attacktype = monsterhit[monsterhit.find("'s ")+3:]
             if monster == self.currentmonster["monster"]:
@@ -1794,10 +1863,16 @@ class english_parser(ffxiv_parser):
     def parse_damagedealt(self, code, logitem):
         logitem = logitem.decode('utf-8')
         if logitem.find("your") != -1 or logitem.find("Your") != -1:
-            if logitem.find("from the ") != -1:
-                monster = logitem[logitem.find("the ") +4:logitem.find(" from the")]
+            if logitem.find("hits the") != -1:
+                if logitem.find("from the ") != -1:
+                    monster = logitem[logitem.find("the ") +4:logitem.find(" from the")]
+                else:
+                    monster = logitem[logitem.find("the ") +4:logitem.find(" for")]
             else:
-                monster = logitem[logitem.find("the ") +4:logitem.find(" for")]
+                if logitem.find("from the ") != -1:
+                    monster = logitem[logitem.find("hits ") +5:logitem.find(" from the")]
+                else:
+                    monster = logitem[logitem.find("hits ") +5:logitem.find(" for")]
             if monster == self.currentmonster["monster"]:                        
                 if logitem.find("Critical!") != -1:
                     critical = 1
@@ -1846,7 +1921,8 @@ class english_parser(ffxiv_parser):
 
     def parse_defeated(self, code, logitem):
         logitem = logitem.decode('utf-8')
-        self.echo("defeated " + logitem, 1)        
+        self.echo("defeated " + logitem, 1)
+        #print self.currentmonster
         if self.craftingcomplete == 1:
             #print "Defeated:" + logitem
             if self.synthtype != "":
@@ -1870,8 +1946,19 @@ class english_parser(ffxiv_parser):
             if monster != self.currentmonster["monster"]:
                 return
             self.defeated = True
-        if logitem.find("defeat") != -1:
-            monster = logitem[logitem.find("The ") +4:logitem.find(" is defeat")].split('\'')[0]
+        if logitem.find("defeats") != -1:
+            monster = logitem[logitem.find("defeats ") +8:logitem.find(".")]
+            if monster != self.currentmonster["monster"]:
+                return
+            self.defeated = True
+
+        if logitem.find("The ") == -1 and logitem.find("is defeated") != -1:
+            monster = logitem[:logitem.find(" is defeated")]
+            if monster != self.currentmonster["monster"]:
+                return
+            self.defeated = True
+        elif logitem.find("defeated") != -1:
+            monster = logitem[logitem.find("The ") +4:logitem.find(" is defeated")].split('\'')[0]
             if monster != self.currentmonster["monster"]:
                 return
             self.defeated = True
@@ -2584,7 +2671,7 @@ class japanese_parser(ffxiv_parser):
             
         self.echo("generic " + logitem, 1)
 
-def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, password=""):
+def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, password="", parsers=[]):
     global configfile, lastlogparsed
     config = ConfigParser.ConfigParser()
     config.read(configfile)
@@ -2592,21 +2679,16 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
         config.add_section('Config')
     except ConfigParser.DuplicateSectionError:
         pass
-    en_parser = english_parser()
-    jp_parser = japanese_parser()
-    en_parser.characterdata["charactername"] = charactername
-    jp_parser.characterdata["charactername"] = charactername
     logfile = None
     logsparsed = 0
     for logfilename in paths:
         try:
+            # have to read ALL of the files in case something was missed due to a restart when a read was in the middle.
+            # can't guess where a fight may start since NM fights are VERY VERY long 2000+ hits.
             logfiletime = os.stat(logfilename).st_mtime
-            if not os.path.exists('newinstall'):
-                if logfiletime < lastlogparsed - 5000:
-                    continue
             logsparsed = logsparsed + 1
-            en_parser.setLogFileTime(logfiletime)
-            jp_parser.setLogFileTime(logfiletime)
+            for parser in parsers:
+                parser.setLogFileTime(logfiletime)
             logfile = open(logfilename, 'rb')
             # read in the length of this files records
             headerparts = struct.unpack("2l", logfile.read(8))
@@ -2623,27 +2705,19 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
                     endbyte = header[headerpos] - header[headerpos-1]
                 logfile.seek(startbyte)
                 logitem = logfile.read(endbyte)[2:]
-                #print logitem
-                #print "Byte Array"
-                #print bytearray(ByteToHex(logitem))
-                try:
-                    en_parser.parse_line(bytearray(logitem))
-                except UnicodeDecodeError:
-                    pass
-                except:
-                    traceback.print_exc(file=sys.stdout)
-                try:
-                    jp_parser.parse_line(bytearray(logitem))#unicode(logitem, 'utf-8', errors='replace'))
-                except UnicodeDecodeError:
-                    pass
-                except:
-                    traceback.print_exc(file=sys.stdout)
+                for parser in parsers:
+                    try:
+                        parser.parse_line(bytearray(logitem))
+                    except UnicodeDecodeError:
+                        pass
+                    except:
+                        traceback.print_exc(file=sys.stdout)
                 if isrunning:
                     if not isrunning():
                         return
                 continue
-            en_parser.close()
-            jp_parser.close()
+            for parser in parsers:
+                parser.close()
 
         finally:            
             if logfile:
@@ -2654,11 +2728,10 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
             config.write(openconfigfile)
     if os.path.exists('newinstall'):
         os.remove('newinstall')
-    #en_parser.savealllogs()
     # uncomment for debugging to disable uploads
     #return
     if logsparsed > 0:
-        uploadToDB2(password, [en_parser, jp_parser])
+        uploadToDB(password, parsers)
     else:
         print "No new log data to parse.  Don't you have some leves to do?"
 
@@ -2761,7 +2834,7 @@ def uploadCrafting(header, craftingdata):
         else:
             print u"ウェブサイトにアップロード記録クラフト: %d\n" % craftingcount
     
-def uploadToDB2(password="", parsers=[]):
+def uploadToDB(password="", parsers=[]):
     for parser in parsers:
         header = {"version":version,"language":parser.getlanguage(),"password":password, "character":parser.characterdata}        
         uploadDeaths(header, parser.deathsdata)
@@ -2772,117 +2845,14 @@ def uploadToDB2(password="", parsers=[]):
         parser.monsterdata = []
         parser.craftingdata = []
         parser.gatheringdata = []
-        parser.characterdata["deaths"] = []
-        #numcrafting = uploadCrafting(header["crafting"] = parser.craftingdata)
-        '''
-        if parser.getlanguage() == "jp":
-            print u"\n合計グローバルバトルレコード: %d" % totalbattlerecords
-            print u"合計新キャラクター死亡: %d" % deaths
-            print u"レコード送信（無視される重複）: %d" % recordsimported
-            print u"ウェブサイトにアップロードされたレコード: %d" % updatedrecords
-            if int(updatedrecords) > 0:
-                print u"\nあなたのデータはあなたがそれを見ることができる、アップロードされています： \n\n%s" % url["url"] 
-            else:
-                print u"\nいいえ、新しいレコード。あなたはあなたのデータを表示することができます： \n\n%s\n" % url["url"] 
-        elif parser.getlanguage() == "en":
-            print "\nTotal Global Battle Records: %d" % totalbattlerecords
-            print "Total New Character Deaths: %d" % deaths
-            print "Records Sent (Duplicates ignored): %d" % recordsimported
-            print "Records Uploaded To Website: %d" % updatedrecords
-            if int(updatedrecords) > 0:
-                print "\nYour data has been uploaded, you can view it at: \n\n%s" % url["url"] 
-            else:
-                print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"] 
-        '''
-def uploadToDB(password="", parsers=[]):
-    global doloop
-    for parser in parsers:
-        tmpdata = {"version": version, "language": parser.getlanguage(), "password": password, "character": parser.characterdata, "battle": parser.monsterdata, "crafting":parser.craftingdata, "gathering":parser.gatheringdata}
-        jsondata = json.dumps(tmpdata)
-        if not doloop:
-            response = raw_input("Do you wish to display raw data? [y/N]: ")
-        else:
-            response = "no"
-        if response.upper() == "Y" or response.upper() == "YES":
-            if parser.getlanguage() == "en":
-                print "JSON encoded for upload:"
-            elif parser.getlanguage() == "jp":
-                print u"JSONは、アップロード用にエンコードされた:"
-            print jsondata
-        if not doloop:
-            if parser.getlanguage() == "en":
-                response = raw_input("\nDo you wish to upload the data printed above? [Y/n]: ")
-            else:
-                response = raw_input(u"\n上記の印刷データをアップロードしますか？ [Y/n]: ")
-        else:
-            response = "YES"
-        if response == "" or response.upper() == "Y" or response.upper() == "YES":
-            if len(parser.monsterdata) > 0:
-                end = 100
-                totalbattlerecords = 0
-                deaths = 0
-                recordsimported = 0
-                updatedrecords = 0
-                url = None
-                for start in range(0, len(parser.monsterdata), 100):
-                    if end > len(parser.monsterdata):
-                        end = len(parser.monsterdata)
-                    tmpdata = {"version": version, "language": parser.getlanguage(), "password": password, "character": parser.characterdata, "battle": parser.monsterdata[start:end]}
-                    if parser.getlanguage() == "en":
-                        print "Uploading log data. Records %d to %d." % (start, end)
-                    else:
-                        print "アップロードのログデータ。レコード%d〜%d。" % (start, end)
-                    jsondata = json.dumps(tmpdata)
-                    url = doUpload(jsondata)
-                    if url == None:
-                        return
-                    end = end+100
-                    try:
-                        totalbattlerecords = int(url["totalbattlerecords"])
-                        deaths = deaths + int(url["deaths"])
-                        recordsimported = recordsimported + int(url["recordsimported"])
-                        updatedrecords = updatedrecords + int(url["updatedrecords"])
-                    except:
-                        if parser.getlanguage() == "en":
-                            print "Did not understand the response from the server."
-                        else:
-                            print u"サーバーからの応答を理解できませんでした。"
-                #for start in range(0, len(parser.craftingdata), 100):
-                #    tmpdata = {"version":version, "language":parser.getlanguage(), "password": password, "character": parser.characterdata, "crafting":parser.craftingdata, "gathering":parser.gatheringdata                    
-                if parser.getlanguage() == "jp":
-                    print u"\n合計グローバルバトルレコード: %d" % totalbattlerecords
-                    print u"合計新キャラクター死亡: %d" % deaths
-                    print u"レコード送信（無視される重複）: %d" % recordsimported
-                    print u"ウェブサイトにアップロードされたレコード: %d" % updatedrecords
-                    if int(updatedrecords) > 0:
-                        print u"\nあなたのデータはあなたがそれを見ることができる、アップロードされています： \n\n%s" % url["url"] 
-                    else:
-                        print u"\nいいえ、新しいレコード。あなたはあなたのデータを表示することができます： \n\n%s\n" % url["url"] 
-                elif parser.getlanguage() == "en":
-                    print "\nTotal Global Battle Records: %d" % totalbattlerecords
-                    print "Total New Character Deaths: %d" % deaths
-                    print "Records Sent (Duplicates ignored): %d" % recordsimported
-                    print "Records Uploaded To Website: %d" % updatedrecords
-                    if int(updatedrecords) > 0:
-                        print "\nYour data has been uploaded, you can view it at: \n\n%s" % url["url"] 
-                    else:
-                        print "\nNo new records. You can view your data at: \n\n%s\n" % url["url"]                 
-        else:
-            if parser.getlanguage() == "jp":
-                print "Your data will not be sent."
-            elif parser.getlanguage() == "jp":
-                print u"あなたのデータは送信されません。."
-
-        parser.monsterdata = []
-        parser.craftingdata = []
-        parser.gatheringdata = []
-        parser.characterdata["deaths"] = []
+        parser.deathsdata["deaths"] = []
 
 def doUpload(jsondata, url):
     try:
         #url = 'http://ffxivbattle.com/postlog-test.php'
         user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
         values = {'jsondata' : jsondata }
+        #print values
         headers = { 'User-Agent' : "H3lls Log Parser v %s" % (str(version)),
             'Content-Type': 'text/plain; charset=utf-8' }
         req = urllib2.Request(url, jsondata, headers)
