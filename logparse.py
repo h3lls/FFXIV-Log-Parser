@@ -82,7 +82,7 @@ if os.path.exists('config/') and not os.path.exists('logparser.cfg'):
 else:
     configfile = 'logparser.cfg'
 
-version = 4.7
+version = 4.8
 charactername = ""
 doloop = 0
 app = None
@@ -1344,7 +1344,7 @@ class english_parser(ffxiv_parser):
         self.autotranslateheader = b'\x02\x2E'
 
     def monsterIsNM(self, monster):
-        NMList = ['alux', 'bardi', 'barometz', 'bloodthirsty wolf', 'bomb baron', 'daddy longlegs', 'dodore', 'downy dunstan', 'elder mosshorn', 'escaped goobbue', 'frenzied aurelia', 'gluttonous gertrude', 'great buffalo', 'haughtpox bloatbelly', 'jackanapes', 'mosshorn billygoat', 'mosshorn nannygoat', 'nest commander', 'pyrausta', 'queen bolete', 'scurrying spriggan', 'sirocco', 'slippery sykes', 'uraeus']
+        NMList = ['alux', 'bardi', 'barometz', 'bloodthirsty wolf', 'bomb baron', 'cactaur jack', 'daddy longlegs', 'dodore', 'downy dunstan', 'elder mosshorn', 'escaped goobbue', 'frenzied aurelia', 'gluttonous gertrude', 'great buffalo', 'haughtpox bloatbelly', 'jackanapes', 'kokoroon quickfingers', 'mosshorn billygoat', 'mosshorn nannygoat', 'nest commander', 'old six-arms', 'phaia', 'prince of pestilence', 'pyrausta', 'queen bolete', 'scurrying spriggan', 'sirocco', 'slippery sykes', 'spitfire', 'unknown soldier', 'uraeus']
         #print "%s %r" % (monster.lower(), monster.lower() in NMList)
         return monster.lower() in NMList
             
@@ -1382,7 +1382,7 @@ class english_parser(ffxiv_parser):
         return
 
     def printDamage(self, currentmonster):
-        #print currentmonster
+        #print currentmonster["otherhitdamage"]
         if len(currentmonster["damage"]) > 0:
             hitpercent = 100
             critpercent = 0
@@ -1659,6 +1659,14 @@ class english_parser(ffxiv_parser):
         logitem = logitem.decode('utf-8')
         if logitem.find(" MP") != -1:
             return
+        if logitem.find("absorbs") != -1:            
+            caster = logitem[:logitem.find(" absorbs")]
+            spell = "Absorb"
+            target = caster
+            healamount = logitem[logitem.find("absorbs ") +8:logitem.find(" HP")]
+            if int(healamount) == 0:
+                return
+            self.currentmonster["otherhealing"].append([caster, target, spell, healamount])
         if logitem.find("You recover") != -1:
             usepos = logitem.find(" uses ")
             caster = logitem[:usepos]
@@ -1959,6 +1967,7 @@ class english_parser(ffxiv_parser):
             self.defeated = True
         elif logitem.find("defeated") != -1:
             monster = logitem[logitem.find("The ") +4:logitem.find(" is defeated")].split('\'')[0]
+            #print self.currentmonster
             if monster != self.currentmonster["monster"]:
                 return
             self.defeated = True
@@ -2729,7 +2738,7 @@ def readLogFile(paths, charactername, logmonsterfilter = None, isrunning=None, p
     if os.path.exists('newinstall'):
         os.remove('newinstall')
     # uncomment for debugging to disable uploads
-    #return
+    return
     if logsparsed > 0:
         uploadToDB(password, parsers)
     else:
